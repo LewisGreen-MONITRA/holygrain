@@ -94,10 +94,13 @@ def normaliseDataset(args, seed=42):
 
         # rename ids to correspond with the tables that they came from
         # change names after transofmer has run through
-        # Note: 11 features in reduced_df match 11 feature names below
-        reduced_df.columns = ['id', 'energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
-                             'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
-                             'observedRiseTime_ns',  'observedTime_ms', 'peakValue', 'acquisition_id']
+        # Note: The features list already has correct names, so renaming is only needed if columns differ
+        if len(reduced_df.columns) == 11:
+            # Columns already match feature count, ensure correct order
+            reduced_df.columns = ['id', 'energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
+                                 'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
+                                 'observedRiseTime_ns',  'observedTime_ms', 'peakValue', 'acquisition_id']
+        # If column count differs, keep original column names
         return reduced_df, transformers
 
     except FileNotFoundError:
