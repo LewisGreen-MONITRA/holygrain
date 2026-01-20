@@ -7,6 +7,9 @@ import sqlite3
 import numpy as np 
 import pandas as pd 
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import QuantileTransformer
+
+seed = 42 
 
 def getDataset(args):
     """
@@ -55,6 +58,67 @@ def getDataset(args):
         else:
             print(f"Loaded data from {args['databaseFile']}. With Shape: {events_df.shape}")
     return events_df
+
+def normaliseDataset(args, seed=42):
+    """
+    Extends get_dataset.
+    Returns a dataframe with a normal distribution.
+    Pass to reduced_kmeans_function.
+    
+    Args:
+        args: Configuration dictionary
+        seed: Random seed for reproducibility (default: 42)
+    """
+
+    try:
+        events_df = getDataset(args)
+        #features = ['id', 'acquisition_id'] # save for later
+        #events_df.drop(features)
+        features = ['id', 'energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
+                    'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
+                    'observedRiseTime_ns',  'observedTime_ms', 'peakValue', 'acquisition_id']
+
+        transformers = {}
+
+        reduced_df = events_df.copy()
+        reduced_df = reduced_df[features]
+
+        cols = [col for col in reduced_df.columns if col != 'id']
+        for col in cols:
+            transformer = QuantileTransformer(output_distribution="normal", random_state=seed)
+            vec_len = len(reduced_df[col].values)
+            raw_vec = reduced_df[col].values.reshape(vec_len, 1)
+            transformer.fit(raw_vec)
+            transformers[col] = transformer
+            reduced_df[col] = transformer.transform(raw_vec).reshape(1, vec_len)[0]
+
+        # rename ids to correspond with the tables that they came from
+        # change names after transofmer has run through
+        # Note: 11 features in reduced_df match 11 feature names below
+        reduced_df.columns = ['id', 'energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
+                             'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
+                             'observedRiseTime_ns',  'observedTime_ms', 'peakValue', 'acquisition_id']
+        return reduced_df, transformers
+
+    except FileNotFoundError:
+        print(f"ERROR: Failed to Find Event Data at {args['databaseFile']}")
+        print(f"Check File Exists or Update the Path")
+        raise
+
+def inverseTransform(reduced_df, transformers):
+    """
+    Recover original data structure
+
+    """
+    df = reduced_df.copy()
+    cols = [col for col in df.columns if col in transformers]
+
+    for col in cols:
+        transformer = transformers[col]
+        norm_vec = df[col].values.reshape(-1, 1)
+        df[col] = transformer.inverse_transform(norm_vec).flatten()
+
+    return df
 
 
 def getNComponents(df): 
