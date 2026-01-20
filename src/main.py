@@ -10,14 +10,18 @@ import pandas as pd
 import sqlite3
 import pathlib 
 import json 
+import time 
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F 
 
+
 from data_preperation import getDataset, getNComponents, normaliseDataset
 from autoencoder import PhysicsInformedAutoencoder
-from feature_extraction import extract_pd_features, normalise_features, analyze_features 
+from feature_extraction import extract_pd_features, normalise_features,get_feature_thresholds, analyze_features 
 from clustering import hdbscan, isolationForest, min_cluster_calc
+from pd_selector import writeResults    
 
 def load_config(configPath: pathlib.Path):
 
@@ -43,11 +47,11 @@ def load_config(configPath: pathlib.Path):
         raise ValueError(f"Configuration file '{configPath}' is missing 'endTime' key.")
 
     return configDict
-
+    
 
 
 def main(configPath: pathlib.Path):
-    
+    start_time = time.time()
     # =======================================================
     # Load Configuration and Dataset
     cfg = load_config(configPath)
@@ -81,9 +85,19 @@ def main(configPath: pathlib.Path):
     isolated_df = isolationForest(data_normalised)
     n_components = getNComponents(data_normalised)
     clustered_df = hdbscan(isolated_df, n_components=n_components, min_cluster_size=min_cluster, min_samples=min_samples, metric='euclidean')
-    print(clustered_df.describe())
-    print(features.describe())
+   
+   
+    # =======================================================
+    # PD classification 
+    thresholds = get_feature_thresholds()
+
+    # =======================================================
+    # Write Results to db 
+    writeResults(clustered_df, cfg, configPath)
     
+    print("\n=============== AUTOMATED DE-NOISING COMPLETE ===============")
+    print(f'Total Time Taken: {(time.time() - start_time):.2f}s\n')
+
     return 0    
 
 
