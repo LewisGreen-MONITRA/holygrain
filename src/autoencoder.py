@@ -10,20 +10,7 @@ import numpy as np
 
 class PhysicsInformedAutoencoder(nn.Module):
     """
-    Physics‑Informed Auto‑Encoder (PI‑AE) for PD‑signal representation learning.
-
-    The network is structured exactly like the TF version:
-
-        input (B, 1, L)  ──>  Conv1D 32 ──> Conv1D 64 ──> Conv1D 128
-                     └─► GlobalAvgPool ──► Linear → latent_dim
-
-        latent_dim (B, z)  ──► Linear 128
-                     └─► Reshape (B, 128, 1)
-                     ──► ConvTranspose1D 64
-                     ──► ConvTranspose1D 32
-                     ──► ConvTranspose1D 1
-                     └─► Reshape (B, 1, L)
-
+    
     The forward pass returns the reconstructed signal.  A helper
     `compute_losses` method returns the three loss components
     (reconstruction, wavelet sparsity, temporal coherence) and their
@@ -32,9 +19,9 @@ class PhysicsInformedAutoencoder(nn.Module):
     Parameters
     ----------
     latent_dim : int
-        Dimensionality of the bottleneck.  16–64 is a good compromise.
+        Dimensionality of the bottleneck.  16/64 is a good compromise.
     signal_length : int
-        Length of the 1‑D PD signal (e.g. 11).
+        Length of the 1D PD signal (e.g. 11).
     wavelet : str, optional
         Wavelet basis for the sparsity penalty.  Default: 'db4'.
     lambda_wavelet : float, optional
@@ -143,7 +130,7 @@ class PhysicsInformedAutoencoder(nn.Module):
         """
         Compute the wavelet detail coefficients for each sample in *signal*.
         PyWavelets operates on NumPy arrays, so we perform the conversion
-        sample‑by‑sample.  The result is a 2‑D tensor of shape (B, C),
+        sample by sample.  The result is a 2D tensor of shape (B, C),
         where C is the total number of detail coefficients.
         """
         B, _, L = signal.shape
@@ -194,7 +181,7 @@ class PhysicsInformedAutoencoder(nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Ground‑truth signal (B, 1, L).
+            Ground truth signal (B, 1, L).
         recon : torch.Tensor
             Reconstructed signal (B, 1, L).
         latent : torch.Tensor
