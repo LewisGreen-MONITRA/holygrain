@@ -1,407 +1,286 @@
-"""
-Physics-Informed Autoencoder for Partial Discharge Signal Representation Learning
+# ──────────────────────────────────────────────────────────────────────────────
+#  physics_informed_autoencoder.py
+# ──────────────────────────────────────────────────────────────────────────────
 
-This module implements an autoencoder with physics-informed loss functions specifically
-designed for learning meaningful representations of PD signals in high-voltage systems.
-
-Physics-Informed Approach:
-1. Wavelet Sparsity Loss: PD signals are inherently sparse in the wavelet domain
-   (they are impulsive, short-duration events). We encourage the latent representation
-   to preserve this sparsity property.
-
-2. Temporal Coherence Loss: PD signals have characteristic impulse shapes that appear
-   repeatedly. We enforce that similar temporal patterns map to similar latent representations.
-
-3. Reconstruction Loss: Standard MSE ensures the latent representation can reconstruct
-   the original signal accurately.
-
-The combination of these losses guides the autoencoder to learn a latent space that
-captures physically meaningful features of PD signals while filtering out noise.
-"""
-
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import pywt          # pip install PyWavelets
 import numpy as np
-import tensorflow as tf
-import pywt  
-from tensorflow.keras import layers, losses, Model, optimizers
 
+class PhysicsInformedAutoencoder(nn.Module):
+    """
+    Physics‑Informed Auto‑Encoder (PI‑AE) for PD‑signal representation learning.
 
-class PhysicsInformedAutoencoder(Model):
+    The network is structured exactly like the TF version:
+
+        input (B, 1, L)  ──>  Conv1D 32 ──> Conv1D 64 ──> Conv1D 128
+                     └─► GlobalAvgPool ──► Linear → latent_dim
+
+        latent_dim (B, z)  ──► Linear 128
+                     └─► Reshape (B, 128, 1)
+                     ──► ConvTranspose1D 64
+                     ──► ConvTranspose1D 32
+                     ──► ConvTranspose1D 1
+                     └─► Reshape (B, 1, L)
+
+    The forward pass returns the reconstructed signal.  A helper
+    `compute_losses` method returns the three loss components
+    (reconstruction, wavelet sparsity, temporal coherence) and their
+    weighted sum.
+
+    Parameters
+    ----------
+    latent_dim : int
+        Dimensionality of the bottleneck.  16–64 is a good compromise.
+    signal_length : int
+        Length of the 1‑D PD signal (e.g. 11).
+    wavelet : str, optional
+        Wavelet basis for the sparsity penalty.  Default: 'db4'.
+    lambda_wavelet : float, optional
+        Weight for the wavelet sparsity penalty.
+    lambda_temporal : float, optional
+        Weight for the temporal coherence penalty.
     """
-    Physics-Informed Autoencoder for PD signal representation learning.
-    
-    Inherits from tf.keras.Model to enable custom training loops and loss computation.
-    
-    Args:
-        latent_dim (int): Dimensionality of the latent (bottleneck) space.
-                         Lower values: More compression, more abstraction
-                         Higher values: More detail preservation
-                         Recommended: 16-64 depending on input dimension
-        
-        input_shape (tuple): Shape of input signals. For 1D signals: (signal_length,)
-                           Example: (11,) for 11 PD features
-        
-        wavelet (str): Wavelet basis for sparsity constraint. 'db4' (Daubechies 4)
-                      is good for PD signals due to sharp discontinuity detection.
-        
-        lambda_wavelet (float): Weight of wavelet sparsity loss (0.01 recommended)
-        
-        lambda_temporal (float): Weight of temporal coherence loss (0.01 recommended)
-    """
-    
-    def __init__(self, latent_dim=32, input_shape=(11,), wavelet='db4',
-                 lambda_wavelet=0.01, lambda_temporal=0.01):
-        super(PhysicsInformedAutoencoder, self).__init__()
-        
+
+    def __init__(
+        self,
+        latent_dim: int = 32,
+        signal_length: int = 11,
+        wavelet: str = "db4",
+        lambda_wavelet: float = 0.01,
+        lambda_temporal: float = 0.01,
+    ):
+        super().__init__()
+
         self.latent_dim = latent_dim
-        self.input_shape_val = input_shape
+        self.signal_length = signal_length
         self.wavelet = wavelet
         self.lambda_wavelet = lambda_wavelet
         self.lambda_temporal = lambda_temporal
-        
-        # ========================================================================
-        # ENCODER: Compress input signal into latent representation
-        # ========================================================================
-        # The encoder learns to extract the most important features of a PD signal
-        # and represent them in a lower-dimensional space (latent space).
-        # 
-        # Architecture explanation:
-        # - Conv1D layers extract local patterns (impulse characteristics)
-        # - Each layer doubles the filter count to capture increasingly complex patterns
-        # - GlobalAveragePooling reduces spatial dimension while retaining global info
-        # - Final Dense layer projects to latent_dim
-        # ========================================================================
-        
-        self.encoder = tf.keras.Sequential([
-            # Input layer explicitly sized for 1D signals
-            layers.Input(shape=input_shape),
-            
-            # Conv1D layer 1: Extract basic impulse patterns
-            # 32 filters means 32 different pattern detectors
-            # Kernel size 3: Look at 3-point windows (captures local discontinuities)
-            layers.Conv1D(32, kernel_size=3, padding='same', activation='relu', 
-                         name='encoder_conv1'),
-            layers.BatchNormalization(name='encoder_bn1'),
-            
-            # Conv1D layer 2: Extract higher-level patterns from layer 1 outputs
-            # 64 filters build on the 32 patterns to find combinations
-            layers.Conv1D(64, kernel_size=3, padding='same', activation='relu',
-                         name='encoder_conv2'),
-            layers.BatchNormalization(name='encoder_bn2'),
-            
-            # Conv1D layer 3: Extract abstract features
-            # 128 filters for complex pattern combinations
-            layers.Conv1D(128, kernel_size=3, padding='same', activation='relu',
-                         name='encoder_conv3'),
-            layers.BatchNormalization(name='encoder_bn3'),
-            
-            # Global Average Pooling: Average all 128 feature maps across the signal
-            # This reduces (signal_length, 128) → (128,)
-            # Preserves global signal characteristics without spatial dimension
-            layers.GlobalAveragePooling1D(name='encoder_gap'),
-            
-            # Latent representation: Project 128-dim features to latent_dim
-            # This is the "bottleneck" - forces compression of important information
-            layers.Dense(latent_dim, activation='relu', name='latent_space')
-        ], name='Encoder')
-        
-        # ========================================================================
-        # DECODER: Reconstruct signal from latent representation
-        # ========================================================================
-        # Mirror of encoder: expands latent representation back to original shape
-        # Must learn to "uncompresses" the abstract features into concrete signals
-        # ========================================================================
-        
-        self.decoder = tf.keras.Sequential([
-            # Expand latent_dim back to initial compressed feature dimension
-            layers.Input(shape=(latent_dim,)),
-            layers.Dense(128, activation='relu', name='decoder_dense1'),
-            
-            # Reshape from (128,) to (128 features, 1 spatial position)
-            # Then expand spatially through upsampling
-            layers.Reshape((1, 128), name='decoder_reshape'),
-            
-            # Conv1D transpose: Upsample while reducing filters
-            # Maps 128 filters → 64 filters with spatial expansion
-            layers.Conv1DTranspose(64, kernel_size=3, padding='same', 
-                                  activation='relu', name='decoder_conv1'),
-            layers.BatchNormalization(name='decoder_bn1'),
-            
-            # Further upsampling: 64 → 32 filters
-            layers.Conv1DTranspose(32, kernel_size=3, padding='same',
-                                  activation='relu', name='decoder_conv2'),
-            layers.BatchNormalization(name='decoder_bn2'),
-            
-            # Final reconstruction: 32 filters → original signal shape
-            # Linear activation allows unbounded reconstruction values
-            layers.Conv1DTranspose(1, kernel_size=3, padding='same',
-                                  activation='linear', name='decoder_output'),
-            
-            # Reshape back to original input shape
-            # From (input_shape[0], 1) → input_shape
-            layers.Reshape(input_shape, name='final_reshape')
-        ], name='Decoder')
-    
-    def encode(self, x):
+
+        # ------------------------------------------------------------------
+        # ENCODER
+        # ------------------------------------------------------------------
+        self.encoder = nn.Sequential(
+            nn.Conv1d(in_channels=1, out_channels=32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32),
+            nn.ReLU(inplace=True),
+
+            nn.Conv1d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm1d(64),
+            nn.ReLU(inplace=True),
+
+            nn.Conv1d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+
+            # Global average pool over the *signal* dimension
+            nn.AdaptiveAvgPool1d(1),          # → (B, 128, 1)
+            nn.Flatten(start_dim=1),          # → (B, 128)
+
+            nn.Linear(128, latent_dim),
+            nn.ReLU(inplace=True),
+        )
+
+        # ------------------------------------------------------------------
+        # DECODER
+        # ------------------------------------------------------------------
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, 128),
+            nn.ReLU(inplace=True),
+
+            nn.Unflatten(1, (128, 1)),        # → (B, 128, 1)
+
+            nn.ConvTranspose1d(128, 64, kernel_size=3, padding=1),
+            nn.BatchNorm1d(64),
+            nn.ReLU(inplace=True),
+
+            nn.ConvTranspose1d(64, 32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32),
+            nn.ReLU(inplace=True),
+
+            # Final reconstruction – linear activation
+            nn.ConvTranspose1d(32, 1, kernel_size=3, padding=1),
+            # No bias/activation because the reconstruction may contain
+            # positive & negative values.
+
+            nn.Unflatten(1, (1, signal_length)),  # → (B, 1, L)
+        )
+
+    # ------------------------------------------------------------------
+    # Forward pass
+    # ------------------------------------------------------------------
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Encode input signal into latent representation.
-        
-        Args:
-            x: Input signal tensor of shape (batch_size, *input_shape)
-            
-        Returns:
-            Latent representation of shape (batch_size, latent_dim)
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (B, 1, L).
+
+        Returns
+        -------
+        recon : torch.Tensor
+            Reconstructed signal, same shape as *x*.
         """
+        latent = self.encode(x)
+        recon = self.decode(latent)
+        return recon
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the latent representation."""
         return self.encoder(x)
-    
-    def decode(self, z):
-        """
-        Decode latent representation back to signal space.
-        
-        Args:
-            z: Latent representation of shape (batch_size, latent_dim)
-            
-        Returns:
-            Reconstructed signal of shape (batch_size, *input_shape)
-        """
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        """Map latent vector back to signal space."""
         return self.decoder(z)
-    
-    def call(self, x):
+
+    # ------------------------------------------------------------------
+    # Loss helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _wavelet_coeffs(signal: torch.Tensor, wavelet: str) -> torch.Tensor:
         """
-        Forward pass: encode input and decode back to reconstruction.
-        
-        Args:
-            x: Input signal
-            
-        Returns:
-            Reconstructed signal (same shape as input)
+        Compute the wavelet detail coefficients for each sample in *signal*.
+        PyWavelets operates on NumPy arrays, so we perform the conversion
+        sample‑by‑sample.  The result is a 2‑D tensor of shape (B, C),
+        where C is the total number of detail coefficients.
         """
-        z = self.encode(x)
-        x_reconstructed = self.decode(z)
-        return x_reconstructed
-    
-    # ========================================================================
-    # PHYSICS-INFORMED LOSS FUNCTIONS
-    # ========================================================================
-    
-    def reconstruction_loss(self, x_original, x_reconstructed):
+        B, _, L = signal.shape
+        coeffs = []
+
+        # Convert to CPU numpy for the transform – inexpensive for small L
+        for i in range(B):
+            coeff = pywt.wavedec(signal[i, 0, :].detach().cpu().numpy(),
+                                 wavelet=wavelet,
+                                 level=None)  # all levels
+            # Flatten all detail coeffs (ignore approximation)
+            detail = np.concatenate([c for c in coeff[1:]])
+            coeffs.append(detail)
+
+        # Pad to the same length (if needed)
+        max_len = max(len(c) for c in coeffs)
+        coeffs_padded = np.array([np.pad(c, (0, max_len - len(c))) for c in coeffs])
+        return torch.tensor(coeffs_padded, dtype=signal.dtype, device=signal.device)
+
+    def compute_wavelet_loss(self, recon: torch.Tensor) -> torch.Tensor:
         """
-        Reconstruction Loss (MSE): Measures how well the autoencoder can
-        reconstruct the input from the latent representation.
-        
-        Why MSE? PD signals can have continuous values, and MSE is differentiable
-        everywhere, making optimization stable.
-        
-        Low reconstruction loss = Latent representation captures signal details well
+        L1 norm of the wavelet detail coefficients of the reconstruction.
+        Encourages sparsity in the wavelet domain.
         """
-        return losses.mean_squared_error(x_original, x_reconstructed)
-    
-    def wavelet_sparsity_loss(self, x):
+        coeffs = self._wavelet_coeffs(recon, self.wavelet)   # (B, C)
+        return torch.mean(torch.abs(coeffs))
+
+    def compute_temporal_loss(self, latent: torch.Tensor) -> torch.Tensor:
         """
-        Wavelet Sparsity Loss: Encourages latent representation to align with
-        the natural sparsity of PD signals in the wavelet domain.
-        
-        Physics Principle:
-        - PD signals are impulsive (short-duration, high-amplitude events)
-        - Impulses are sparse in wavelet decomposition (few large coefficients)
-        - Noise is distributed across many wavelet coefficients
-        - By encouraging wavelet sparsity, we make the AE learn to represent
-          PD events distinctly from noise
-        
-        Implementation:
-        1. Decompose input into wavelet coefficients (using specified wavelet)
-        2. Compute L1 norm of high-frequency components (detail coefficients)
-        3. L1 norm encourages zeros (sparsity) - non-zero coefficients must
-           be important to justify their existence
-        
-        Returns: Scalar loss value (0 = perfectly sparse, higher = less sparse)
+        Temporal coherence penalty: average L1 distance between
+        consecutive latent vectors *within the batch*.
+        Useful when the batch is a sliding window over a time‑series.
         """
-        try:
-            # For each sample in batch, compute wavelet decomposition
-            sparsity_penalties = []
-            
-            for i in range(tf.shape(x)[0]):
-                sample = x[i].numpy()
-                
-                # Wavelet decomposition: Split signal into approximation (cA)
-                # and detail (cD) coefficients
-                # cA: Low-frequency components (slow variations)
-                # cD: High-frequency components (fast variations, impulses)
-                cA, cD = pywt.dwt(sample, self.wavelet)
-                
-                # L1 norm of detail coefficients: Sum of absolute values
-                # This encourages sparsity: fewer large coefficients preferred
-                # over many small coefficients
-                l1_norm = np.sum(np.abs(cD))
-                sparsity_penalties.append(l1_norm)
-            
-            # Average sparsity penalty across batch
-            sparsity_loss = tf.reduce_mean(tf.constant(sparsity_penalties, dtype=tf.float32))
-            return sparsity_loss
-            
-        except Exception as e:
-            # Fallback: If wavelet decomposition fails, use L1 regularization
-            # This encourages sparse activation patterns in the signal
-            print(f"Wavelet decomposition warning: {e}. Using L1 regularization fallback.")
-            return tf.reduce_mean(tf.abs(x))
-    
-    def temporal_coherence_loss(self, x_original, x_reconstructed):
+        if latent.size(0) < 2:
+            return torch.tensor(0.0, device=latent.device)
+        diff = latent[1:] - latent[:-1]
+        return torch.mean(torch.abs(diff))
+
+    def compute_losses(
+        self,
+        x: torch.Tensor,
+        recon: torch.Tensor,
+        latent: torch.Tensor,
+    ) -> dict:
         """
-        Temporal Coherence Loss: Ensures similar temporal patterns map to
-        similar latent representations.
-        
-        Physics Principle:
-        - PD events follow characteristic impulse shapes (rise time, peak, fall time)
-        - Different PD events in similar conditions have similar shapes
-        - By enforcing temporal coherence, we ensure the latent space groups
-          similar PD patterns together, separating them from noise
-        
-        Implementation:
-        1. Compute first derivatives (temporal velocity)
-        2. Penalize large differences in derivatives between original and reconstruction
-        3. This encourages smooth, physically plausible reconstructions
-        
-        Why derivatives? They capture the "shape" of transients (impulses).
-        Two signals with same shape but different amplitudes have similar derivatives.
+        Compute all three loss components and return a dictionary.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Ground‑truth signal (B, 1, L).
+        recon : torch.Tensor
+            Reconstructed signal (B, 1, L).
+        latent : torch.Tensor
+            Latent vector (B, latent_dim).
+
+        Returns
+        -------
+        dict
+            Keys: 'recon', 'wavelet', 'temporal', 'total'.
         """
-        
-        # Compute first derivative: Difference between consecutive time points
-        # Represents how quickly the signal changes (temporal velocity)
-        original_derivative = x_original[:, 1:] - x_original[:, :-1]
-        reconstructed_derivative = x_reconstructed[:, 1:] - x_reconstructed[:, :-1]
-        
-        # MSE between derivatives: Penalizes reconstruction that doesn't
-        # preserve the temporal structure (impulse shape)
-        derivative_mse = losses.mean_squared_error(
-            original_derivative, 
-            reconstructed_derivative
-        )
-        
-        # Compute second derivative: Acceleration (curvature)
-        # Captures the "sharpness" of impulses (PD events are sharp)
-        original_second_derivative = original_derivative[:, 1:] - original_derivative[:, :-1]
-        reconstructed_second_derivative = reconstructed_derivative[:, 1:] - reconstructed_derivative[:, :-1]
-        
-        # Second derivative MSE: Penalizes loss of sharp features (impulses)
-        second_derivative_mse = losses.mean_squared_error(
-            original_second_derivative,
-            reconstructed_second_derivative
-        )
-        
-        # Combine: Weight first and second derivatives equally
-        # Together they ensure both smooth transitions (1st) and sharp features (2nd)
-        return derivative_mse + 0.5 * second_derivative_mse
-    
-    def compute_loss(self, x):
-        """
-        Compute total physics-informed loss.
-        
-        Total Loss = L_reconstruction + lambda_wavelet * L_wavelet + lambda_temporal * L_temporal
-        
-        Where:
-        - L_reconstruction: How well we reconstruct the signal (0.7 importance)
-        - L_wavelet: Wavelet sparsity (0.15 importance)
-        - L_temporal: Temporal coherence (0.15 importance)
-        
-        The weights (λ) control how much each term influences training.
-        """
-        x_reconstructed = self(x)
-        
-        # Compute each loss component
-        recon_loss = tf.reduce_mean(self.reconstruction_loss(x, x_reconstructed))
-        wavelet_loss = self.wavelet_sparsity_loss(x)
-        temporal_loss = tf.reduce_mean(self.temporal_coherence_loss(x, x_reconstructed))
-        
-        # Weighted combination: Physics-informed total loss
+        recon_loss = F.mse_loss(recon, x, reduction="mean")
+
+        wavelet_loss = self.compute_wavelet_loss(recon)
+        temporal_loss = self.compute_temporal_loss(latent)
+
         total_loss = (
-            recon_loss + 
-            self.lambda_wavelet * wavelet_loss + 
-            self.lambda_temporal * temporal_loss
+            recon_loss
+            + self.lambda_wavelet * wavelet_loss
+            + self.lambda_temporal * temporal_loss
         )
-        
-        return total_loss, recon_loss, wavelet_loss, temporal_loss
-    
-    def train_step(self, x):
-        """
-        Custom training step for physics-informed learning.
-        
-        Uses GradientTape to compute gradients of the physics-informed loss
-        with respect to model parameters, then applies them via optimizer.
-        """
-        with tf.GradientTape() as tape:
-            total_loss, recon_loss, wavelet_loss, temporal_loss = self.compute_loss(x)
-        
-        # Compute gradients
-        gradients = tape.gradient(total_loss, self.trainable_weights)
-        
-        # Apply gradients to update model weights
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_weights))
-        
-        # Return metrics for monitoring
+
         return {
-            'total_loss': total_loss,
-            'reconstruction_loss': recon_loss,
-            'wavelet_loss': wavelet_loss,
-            'temporal_loss': temporal_loss
+            "recon": recon_loss,
+            "wavelet": wavelet_loss,
+            "temporal": temporal_loss,
+            "total": total_loss,
         }
-    
-    def fit_physics_informed(self, train_data, epochs=100, batch_size=32,
-                            validation_data=None, verbose=1):
-        """
-        Train the physics-informed autoencoder.
-        
-        Args:
-            train_data: Training signal data (numpy array or tf.Dataset)
-            epochs: Number of training iterations over full dataset
-            batch_size: Number of samples per gradient update
-            validation_data: Optional validation data for monitoring
-            verbose: Print training progress (0, 1, or 2)
-            
-        Returns:
-            Training history (losses over epochs)
-        """
-        # Use Adam optimizer for adaptive learning rate
-        self.optimizer = optimizers.Adam(learning_rate=1e-3)
-        
-        # Create dataset
-        if not isinstance(train_data, tf.data.Dataset):
-            train_dataset = tf.data.Dataset.from_tensor_slices(train_data)\
-                .batch(batch_size)\
-                .shuffle(buffer_size=1000)
-        else:
-            train_dataset = train_data.batch(batch_size)
-        
-        history = {
-            'total_loss': [],
-            'reconstruction_loss': [],
-            'wavelet_loss': [],
-            'temporal_loss': []
-        }
-        
-        # Training loop
-        for epoch in range(epochs):
-            epoch_losses = {
-                'total_loss': [],
-                'reconstruction_loss': [],
-                'wavelet_loss': [],
-                'temporal_loss': []
-            }
-            
-            for batch in train_dataset:
-                metrics = self.train_step(batch)
-                
-                for key in epoch_losses.keys():
-                    epoch_losses[key].append(metrics[key].numpy())
-            
-            # Average losses over epoch
-            for key in history.keys():
-                avg_loss = np.mean(epoch_losses[key])
-                history[key].append(avg_loss)
-            
-            if verbose > 0 and (epoch + 1) % max(1, epochs // 10) == 0:
-                print(f"Epoch {epoch + 1}/{epochs} - "
-                      f"Total Loss: {history['total_loss'][-1]:.4f}, "
-                      f"Recon: {history['reconstruction_loss'][-1]:.4f}, "
-                      f"Wavelet: {history['wavelet_loss'][-1]:.4f}, "
-                      f"Temporal: {history['temporal_loss'][-1]:.4f}")
-        
-        return history
+
+# ----------------------------------------------------------------------
+# Simple training loop skeleton (illustrative – not meant for production)
+# ----------------------------------------------------------------------
+def train_pi_ae(
+    model: PhysicsInformedAutoencoder,
+    dataloader,
+    optimizer,
+    device: torch.device = torch.device("cpu"),
+    epochs: int = 20,
+):
+    model.to(device)
+    model.train()
+
+    for epoch in range(epochs):
+        epoch_loss = 0.0
+        for batch_idx, batch in enumerate(dataloader):
+            # batch is expected to be a tensor of shape (B, 1, L)
+            batch = batch.to(device)
+
+            optimizer.zero_grad()
+
+            recon = model(batch)
+            latent = model.encode(batch)
+
+            losses = model.compute_losses(batch, recon, latent)
+            loss = losses["total"]
+
+            loss.backward()
+            optimizer.step()
+
+            epoch_loss += loss.item()
+
+        epoch_loss /= len(dataloader)
+        print(
+            f"Epoch {epoch+1:02d}/{epochs:02d}  "
+            f"Loss: {epoch_loss:.6f}  "
+            f"Recon: {losses['recon']:.6f}  "
+            f"Wavelet: {losses['wavelet']:.6f}  "
+            f"Temporal: {losses['temporal']:.6f}"
+        )
+
+
+# ----------------------------------------------------------------------
+# Example usage
+# ----------------------------------------------------------------------
+if __name__ == "__main__":
+    # Dummy dataset – replace with real PD data
+    BATCH = 32
+    SIG_LEN = 11
+    NUM_SAMPLES = 1000
+
+    dummy = torch.randn(NUM_SAMPLES, 1, SIG_LEN)
+    dummy_loader = torch.utils.data.DataLoader(
+        dummy, batch_size=BATCH, shuffle=True, drop_last=True
+    )
+
+    pi_ae = PhysicsInformedAutoencoder(signal_length=SIG_LEN)
+    opt = torch.optim.Adam(pi_ae.parameters(), lr=1e-3)
+
+    train_pi_ae(pi_ae, dummy_loader, opt, epochs=5)
+
