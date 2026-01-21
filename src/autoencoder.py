@@ -74,25 +74,23 @@ class PhysicsInformedAutoencoder(nn.Module):
         # DECODER
         # ------------------------------------------------------------------
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, 128),
+            nn.Linear(latent_dim, 128 * signal_length),  # Expand to (B, 128*L)
             nn.ReLU(inplace=True),
 
-            nn.Unflatten(1, (128, 1)),        # → (B, 128, 1)
+            nn.Unflatten(1, (128, signal_length)),  # → (B, 128, L)
 
-            nn.ConvTranspose1d(128, 64, kernel_size=3, padding=1),
+            nn.Conv1d(128, 64, kernel_size=3, padding=1),
             nn.BatchNorm1d(64),
             nn.ReLU(inplace=True),
 
-            nn.ConvTranspose1d(64, 32, kernel_size=3, padding=1),
+            nn.Conv1d(64, 32, kernel_size=3, padding=1),
             nn.BatchNorm1d(32),
             nn.ReLU(inplace=True),
 
             # Final reconstruction – linear activation
-            nn.ConvTranspose1d(32, 1, kernel_size=3, padding=1),
+            nn.Conv1d(32, 1, kernel_size=3, padding=1),
             # No bias/activation because the reconstruction may contain
             # positive & negative values.
-
-            nn.Unflatten(1, (1, signal_length)),  # → (B, 1, L)
         )
 
     # ------------------------------------------------------------------
@@ -136,14 +134,24 @@ class PhysicsInformedAutoencoder(nn.Module):
         B, _, L = signal.shape
         coeffs = []
 
-        # Convert to CPU numpy for the transform – inexpensive for small L
+        # Convert to CPU numpy for the transform 
         for i in range(B):
-            coeff = pywt.wavedec(signal[i, 0, :].detach().cpu().numpy(),
-                                 wavelet=wavelet,
-                                 level=None)  # all levels
-            # Flatten all detail coeffs (ignore approximation)
-            detail = np.concatenate([c for c in coeff[1:]])
-            coeffs.append(detail)
+            try:
+                coeff = pywt.wavedec(signal[i, 0, :].detach().cpu().numpy(),
+                                     wavelet=wavelet,
+                                     level=None)  # all levels
+                detail_list = [c for c in coeff[1:]]
+                # Handle case where no detail coefficients exist (short signals)
+                if detail_list:
+                    detail = np.concatenate(detail_list)
+                else:
+                    # For very short signals, use the signal itself as fallback
+                    detail = signal[i, 0, :].detach().cpu().numpy()
+                    
+                coeffs.append(detail)
+            except Exception as e:
+                # Fallback: use signal as-is if wavelet decomposition fails
+                coeffs.append(signal[i, 0, :].detach().cpu().numpy())
 
         # Pad to the same length (if needed)
         max_len = max(len(c) for c in coeffs)
@@ -162,7 +170,7 @@ class PhysicsInformedAutoencoder(nn.Module):
         """
         Temporal coherence penalty: average L1 distance between
         consecutive latent vectors *within the batch*.
-        Useful when the batch is a sliding window over a time‑series.
+        Useful when the batch is a sliding window over a time-series.
         """
         if latent.size(0) < 2:
             return torch.tensor(0.0, device=latent.device)

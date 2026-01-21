@@ -512,7 +512,7 @@ def extract_pd_features(data, clustering_labels=None, raw_signals=None):
     
     features_df = pd.DataFrame(features)
     
-    print(f"✓ Feature extraction complete: {features_df.shape}")
+    print(f"Feature extraction complete: {features_df.shape}")
     
     return features_df
 

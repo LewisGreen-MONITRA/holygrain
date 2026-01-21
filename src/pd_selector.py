@@ -11,6 +11,7 @@ Map cluster assingments to 1 for PD and 0 for noise
 Can then write these results back to database, to be loaded into heatmap viewer. 
 
 """
+from duckdb import df
 import numpy as np
 import pandas as pd 
 import sqlite3
@@ -20,7 +21,40 @@ import uuid
 from sklearn.ensemble import VotingClassifier
 
 
-def writeResults(df, cfg, path):
+
+
+def assignWeights(feature_thresholds):
+    """
+    Define weights based on feature thresholds
+    kurtosis
+    Phase Consistency
+    Energy Concentration
+    SNR
+    Repition Regularity
+    
+    :param feature_thresholds: Description
+    """
+    weights = {}
+    for feature, threshold in feature_thresholds.items():
+        weights[feature] = 1.0 / threshold 
+
+
+    return weights
+
+
+def computeScores(df, feature_thresholds):
+   
+   for cluster in df['cluster'].unique(): # compute the scores for each cluster
+         cluster_data = df[df['cluster'] == cluster]
+         score = 0
+         for feature, threshold in feature_thresholds.items():
+              feature_mean = cluster_data[feature].mean()
+              if feature_mean >= threshold:
+                score += 1
+
+   return df 
+
+def writeResults(df, cfg, path):    
   """
   Write Cluster Labels to Cluster db.
 

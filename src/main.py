@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 
 from data_preperation import getDataset, getNComponents, normaliseDataset
-from autoencoder import PhysicsInformedAutoencoder
+from autoencoder import PhysicsInformedAutoencoder, train_pi_ae
 from feature_extraction import extract_pd_features, normalise_features,get_feature_thresholds, analyze_features 
 from clustering import hdbscan, isolationForest, min_cluster_calc
 from pd_selector import writeResults    
@@ -62,38 +62,60 @@ def main(configPath: pathlib.Path):
     # =======================================================
     # Feature Extraction and Normalisation
     # Domain specific feature extraction, kurtosis etc. 
-    features = extract_pd_features(data_normalised)
-    normalised_features, domain_transformers = normalise_features(features)
-
+    pd_features = extract_pd_features(data_normalised)
+    normalised_features, domain_transformers = normalise_features(pd_features)
 
     # =======================================================
     # Autoencoder Initialisation 
-    #loader = torch.utils.data.DataLoader(
-    #    torch.tensor(normalised_features.values, dtype=torch.float32),
-    #    batch_size=32,
-    #    shuffle=True,
-    #    drop_last=True)
-    #autoencoder = PhysicsInformedAutoencoder(signal_length= 11, latent_dim=16)    
-    #optimiser = torch.optim.Adam(autoencoder.parameters(), lr=1e-3)
+    # Select only the physical PD features (exclude id, acq_id columns)
+    print(f'Initialising Physics Informed Autoencoder...')
+    features = ['energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
+                    'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
+                    'observedRiseTime_ns',  'observedTime_ms', 'peakValue']
+    data_numeric = data_normalised[features]
+    
+    # Detect actual signal length from data
+    
+    signal_length = len(features)
+    print(f"Using {signal_length} features for autoencoder")
+    
+    data_tensor = torch.tensor(data_numeric.values, dtype=torch.float32)
+    if len(data_tensor.shape) == 2:
+        # Add channel dimension: (N, features) -> (N, 1, features)
+        data_tensor = data_tensor.unsqueeze(1)
+    
+    loader = torch.utils.data.DataLoader(
+        data_tensor,
+        batch_size=32,
+        shuffle=True,
+        drop_last=True)
+    autoencoder = PhysicsInformedAutoencoder(signal_length=signal_length)    
+    optimiser = torch.optim.Adam(autoencoder.parameters(), lr=1e-3)
     # Training 
+    train_pi_ae(autoencoder, loader, optimiser, device=torch.device("cpu"), epochs=5)
+    # Obtain latent space representation
+    autoencoder.eval()
+    with torch.no_grad():
+        latent_space = autoencoder.encode(data_tensor).numpy()
+        latent_df = pd.DataFrame(latent_space, columns=[f'latent_{i}' for i in range(latent_space.shape[1])])
 
-
+    print(f'Latent space shape: {latent_df.shape}')
     # =======================================================
     # Noise filtering and clustering 
     min_cluster = 30 #in_cluster_calc(frequency=50, eval_window=0.02)
     min_samples = 15
-    isolated_df = isolationForest(data_normalised)
-    n_components = getNComponents(data_normalised)
+    isolated_df = isolationForest(latent_df)
+    n_components = getNComponents(latent_df)
     clustered_df = hdbscan(isolated_df, n_components=n_components, min_cluster_size=min_cluster, min_samples=min_samples, metric='euclidean')
-   
-   
+
+    
     # =======================================================
     # PD classification 
     thresholds = get_feature_thresholds()
-
+    
     # =======================================================
     # Write Results to db 
-    writeResults(clustered_df, cfg, configPath)
+    #writeResults(clustered_df, cfg, configPath)
     
     print("\n=============== AUTOMATED DE-NOISING COMPLETE ===============")
     print(f'Total Time Taken: {(time.time() - start_time):.2f}s\n')

@@ -84,7 +84,11 @@ def hdbscan(df, n_components, min_cluster_size, min_samples, metric='euclidean')
     print(f'Running HDBSCAN clustering with min_cluster_size={min_cluster_size} and PCA n_components={n_components}...')
 
     pca = PCA(n_components=n_components).fit_transform(df)
-    clf = HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples, metric=metric)
+    clf = HDBSCAN(min_cluster_size=min_cluster_size,
+                   min_samples=min_samples,
+                     metric=metric, 
+                     algorithm='kd_tree',
+                     n_jobs=-1)
     clf.fit(pca)
 
     labels = clf.labels_ 
