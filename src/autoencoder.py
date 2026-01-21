@@ -5,7 +5,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pywt          # pip install PyWavelets
+import pywt     
 import numpy as np
 
 class PhysicsInformedAutoencoder(nn.Module):
@@ -151,7 +151,8 @@ class PhysicsInformedAutoencoder(nn.Module):
                 coeffs.append(detail)
             except Exception as e:
                 # Fallback: use signal as-is if wavelet decomposition fails
-                coeffs.append(signal[i, 0, :].detach().cpu().numpy())
+                coeffs.append(signal[i, 0,
+                                      :].detach().cpu().numpy())
 
         # Pad to the same length (if needed)
         max_len = max(len(c) for c in coeffs)
