@@ -13,18 +13,17 @@ Five Key Measures:
 5. Repetition Rate Regularity: Measures pattern regularity
 
 Physics Principles:
-- PD signals are impulsive (high kurtosis) → Concentration of energy at peaks
-- PD signals are coherent (high phase consistency) → Repeatable patterns
+- PD signals are impulsive (high kurtosis) Concentration of energy at peaks
+- PD signals are coherent (high phase consistency) Repeatable patterns
 - PD signals have localized frequency content (high energy concentration)
-- PD signals have good SNR → Well-defined pulse in noise
-- PD events repeat (high repetition regularity) → Temporal patterns
+- PD signals have good SNR Well-defined pulse in noise
+- PD events repeat (high repetition regularity) Temporal patterns
 """
 
 import numpy as np
 import pandas as pd
 from scipy import signal, stats
 from sklearn.preprocessing import StandardScaler
-
 
 # ============================================================================
 # FEATURE 1: KURTOSIS - Signal Impulsivity
@@ -38,7 +37,7 @@ def compute_kurtosis(data):
     - Kurtosis measures the "tailedness" or peakedness of a distribution
     - Normal distribution has kurtosis = 3 (excess kurtosis = 0)
     - Impulsive signals (PD) have high kurtosis (> 3)
-    - Gaussian noise has kurtosis ≈ 3
+    - Gaussian noise has kurtosis ~ 3
     
     Interpretation:
     - PD kurtosis: typically 5-20 (sharp, concentrated peaks)
@@ -469,11 +468,6 @@ def extract_pd_features(data, clustering_labels=None, raw_signals=None):
                     - energy_concentration: Frequency localization (0-1, higher for PD)
                     - snr: Signal quality in dB (10-50 for PD, 0-10 for noise)
                     - repetition_regularity: Pattern regularity (0-1, higher for PD)
-    
-    Usage:
-        >>> from feature_extraction import extract_pd_features
-        >>> features = extract_pd_features(normalized_data)
-        >>> print(features.describe())
     """
     
     # Initialize feature dictionary
@@ -550,23 +544,53 @@ def normalise_features(features_df):
     
     return normalised_df, scalers
 
-def get_feature_thresholds():
+def get_feature_thresholds(sensor):
     """
     Return recommended thresholds for PD vs Noise classification.
     
-    These thresholds are based on domain knowledge and can be tuned
-    based on your specific system characteristics.
+    Thresholds are based on sensor type and principle for PD classification associated with 
+    the given sensor. 
+
+    Args: Sensor, type as string (e.g., 'HFCT', 'UHF', 'TEV')
+    Sensor should be pulled from db with getSensor function 
     
     Returns:
         thresholds: Dictionary with threshold values
-        
-    Example:
-        >>> thresholds = get_feature_thresholds()
-        >>> if feature_value > thresholds['kurtosis']:
-        ...     vote_for_pd = True
+
     """
     
-    thresholds = {
+    if sensor == 'HFCT':
+        print(f'Using HFCT-specific feature thresholds.')
+        thresholds = {
+            'kurtosis': 4.0,                    # Excess kurtosis > 4 suggests impulsive
+            'phase_consistency': 0.6,           # Consistency > 0.6 suggests coherent
+            'energy_concentration': 0.5,        # Energy > 50% in band suggests localized
+            'snr': 7.0,                         # SNR > 7 dB suggests good signal quality
+            'repetition_regularity': 0.75       # Regularity > 0.75 suggests periodic
+        }
+    elif sensor == 'UHF':
+        print(f'Using UHF-specific feature thresholds.')
+        thresholds = {
+            'kurtosis': 5.0,                    # Excess kurtosis > 5 suggests impulsive
+            'phase_consistency': 0.65,          # Consistency > 0.65 suggests coherent
+            'energy_concentration': 0.55,       # Energy > 55% in band suggests localized
+            'snr': 10.0,                        # SNR > 10 dB suggests good signal quality
+            'repetition_regularity': 0.8        # Regularity > 0.8 suggests periodic
+        }
+    elif sensor == 'TEV':
+        print(f'Using TEV-specific feature thresholds.')
+        thresholds = {
+            'kurtosis': 3.5,                    # Excess kurtosis > 3.5 suggests impulsive
+            'phase_consistency': 0.55,          # Consistency > 0.55 suggests coherent
+            'energy_concentration': 0.45,       # Energy > 45% in band suggests localized
+            'snr': 5.0,                         # SNR > 5 dB suggests good signal quality
+            'repetition_regularity': 0.7        # Regularity > 0.7 suggests periodic
+        }
+    # TODO add thresholds for HVCC 
+    else:
+        # default thresholds for HVCC or unknown sensor types
+        print(f'Using default feature thresholds.')
+        thresholds = {
         'kurtosis': 3.0,                    # Excess kurtosis > 3 suggests impulsive
         'phase_consistency': 0.7,           # Consistency > 0.7 suggests coherent
         'energy_concentration': 0.6,        # Energy > 60% in band suggests localized
@@ -575,39 +599,3 @@ def get_feature_thresholds():
     }
     
     return thresholds
-
-
-# ============================================================================
-# DEBUGGING & ANALYSIS
-# ============================================================================
-
-def analyze_features(features_df):
-    """
-    Print detailed statistics about extracted features.
-    
-    Useful for understanding feature distributions and tuning thresholds.
-    
-    Args:
-        features_df: DataFrame from extract_pd_features()
-    """
-    
-    print("\n" + "="*70)
-    print("FEATURE EXTRACTION ANALYSIS")
-    print("="*70 + "\n")
-    
-    print("Feature Statistics:")
-    print("-" * 70)
-    print(features_df.describe().to_string())
-    
-    print("\n\nFeature Correlations:")
-    print("-" * 70)
-    print(features_df.corr().to_string())
-    
-    print("\n\nSkewness & Kurtosis:")
-    print("-" * 70)
-    for col in features_df.columns:
-        skew = stats.skew(features_df[col])
-        kurt = stats.kurtosis(features_df[col])
-        print(f"{col:25s}: Skew={skew:7.4f}, Kurt={kurt:7.4f}")
-    
-    print("\n" + "="*70)
