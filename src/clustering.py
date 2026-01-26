@@ -38,7 +38,7 @@ def isolationForest(df):
     
 
 
-def min_cluster_calc(frequency=50, eval_window=0.02):
+def min_cluster_calc(acqui_df, cfg , frequency=50):
     """
     Physics informed appraoch to calculating min_cluster_size for hdbscan. 
     Leverage known characteristics of PD signals to inform this choice. 
@@ -57,14 +57,19 @@ def min_cluster_calc(frequency=50, eval_window=0.02):
     Returns optimal min_cluster_size value.
     
     """
+    
+    start_time = cfg['startTime']
+    end_time = cfg['endTime']
 
-    estimate_pdpc = 0.2 # conservative estimate for pulses per cycle
-    cycles = frequency * eval_window 
-    min_events = estimate_pdpc * cycles
+    eval_window = (end_time - start_time) / 1000  # ms to s
+    
+    cycles = frequency * eval_window  # total cycles in eval window
+    
+    avg_events = acqui_df['eventCount'].sum() // len(acqui_df)  # average events per acquisition
 
     safety_margin = 3
 
-    min_cluster_size = int(min_events * safety_margin)
+    min_cluster_size = int(avg_events // safety_margin) # lower bound estimate 
     
     return min_cluster_size
     
@@ -82,7 +87,7 @@ def hdbscan(df, n_components, min_cluster_size, min_samples, metric='euclidean')
     """
 
     print(f'Running HDBSCAN clustering with min_cluster_size={min_cluster_size} and PCA n_components={n_components}...')
-
+    print("This may take some time...")
     pca = PCA(n_components=n_components).fit_transform(df)
     clf = HDBSCAN(min_cluster_size=min_cluster_size,
                    min_samples=min_samples,
