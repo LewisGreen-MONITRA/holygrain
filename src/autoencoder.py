@@ -260,22 +260,3 @@ def train_pi_ae(
         )
 
 
-# ----------------------------------------------------------------------
-# Example usage
-# ----------------------------------------------------------------------
-if __name__ == "__main__":
-    # Dummy dataset – replace with real PD data
-    BATCH = 32
-    SIG_LEN = 11
-    NUM_SAMPLES = 1000
-
-    dummy = torch.randn(NUM_SAMPLES, 1, SIG_LEN)
-    dummy_loader = torch.utils.data.DataLoader(
-        dummy, batch_size=BATCH, shuffle=True, drop_last=True
-    )
-
-    pi_ae = PhysicsInformedAutoencoder(signal_length=SIG_LEN)
-    opt = torch.optim.Adam(pi_ae.parameters(), lr=1e-3)
-
-    train_pi_ae(pi_ae, dummy_loader, opt, epochs=5)
-
