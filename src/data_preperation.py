@@ -129,6 +129,13 @@ def getSensor(args):
     
     return sensor
 
+def getEventCount(cfg):
+    query = """
+    SELECT eventCount 
+    FROM Acquisition AS a
+    """
+    acqui_df = pd.read_sql_query(query, sqlite3.connect(cfg['databaseFile']))
+    return acqui_df
 
 def inverseTransform(reduced_df, transformers):
     """
