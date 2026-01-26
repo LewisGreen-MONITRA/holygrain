@@ -11,6 +11,7 @@ from sklearn.preprocessing import QuantileTransformer
 
 seed = 42 
 
+
 def getDataset(args):
     """
     Recursively find data within a given directory provided by cnf file
@@ -107,6 +108,27 @@ def normaliseDataset(args, seed=42):
         print(f"ERROR: Failed to Find Event Data at {args['databaseFile']}")
         print(f"Check File Exists or Update the Path")
         raise
+
+def getSensor(args):
+    """
+    Get sensor type from database
+    args: Config dictionary 
+
+    Returns sensor type as a string.
+    """
+
+    query = """
+    SELECT sensorType
+    FROM Channel
+    WHERE channelNumber = :channelNumber
+    """
+
+    channelDdf = pd.read_sql_query(query, sqlite3.connect(args['databaseFile']),
+                                    params={'channelNumber': args['channelNumber']})
+    sensor = channelDdf['sensorType'].values
+    
+    return sensor
+
 
 def inverseTransform(reduced_df, transformers):
     """
