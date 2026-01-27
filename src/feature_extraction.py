@@ -558,7 +558,9 @@ def get_feature_thresholds(sensor):
         thresholds: Dictionary with threshold values
 
     """
-    
+    # TODO properly tune thresholds based on sensor characteristics
+    # currently seems that the thresholds are not enhancing performance
+    # no pd events are found when implementing anything other than default thresholds
     if sensor == 'HFCT':
         print(f'Using HFCT-specific feature thresholds.')
         thresholds = {
