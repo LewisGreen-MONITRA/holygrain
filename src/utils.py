@@ -17,3 +17,12 @@ def plot_clusters(df):
     ax.set_xlabel('Observed Time (ms)')
     ax.set_ylabel('Energy')
     plt.show()
+
+
+# TODO add cluster validation metrics 
+def validate_clusters(df):
+    """
+    Placeholder for cluster validation metrics.
+    Could implement silhouette score, Davies-Bouldin index, etc.
+    """
+    pass
