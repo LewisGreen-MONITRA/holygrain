@@ -110,7 +110,7 @@ class PhysicsInformedAutoencoder(nn.Module):
         """
         latent = self.encode(x)
         recon = self.decode(latent)
-        return recon
+        return recon, latent 
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """Return the latent representation."""
@@ -224,9 +224,11 @@ class PhysicsInformedAutoencoder(nn.Module):
 def train_pi_ae(
     model: PhysicsInformedAutoencoder,
     dataloader,
-    optimizer,
+    optimiser,
+    scheduler,
     device: torch.device = torch.device("cpu"),
     epochs: int = 20,
+    patience = 5 
 ):
     model.to(device)
     model.train()
@@ -236,17 +238,17 @@ def train_pi_ae(
         for batch_idx, batch in enumerate(dataloader):
             # batch is expected to be a tensor of shape (B, 1, L)
             batch = batch.to(device)
+            # clear gradients
+            optimiser.zero_grad(set_to_none=True)
 
-            optimizer.zero_grad()
-
-            recon = model(batch)
-            latent = model.encode(batch)
-
+            recon, latent = model(batch)
+            
             losses = model.compute_losses(batch, recon, latent)
             loss = losses["total"]
 
             loss.backward()
-            optimizer.step()
+            optimiser.step()
+            scheduler.step()
 
             epoch_loss += loss.item()
 
