@@ -562,12 +562,12 @@ def get_feature_thresholds(sensor):
     if sensor == 'HFCT':
         print(f'Using HFCT-specific feature thresholds.')
         thresholds = {
-            'kurtosis': 4.0,                    # Excess kurtosis > 4 suggests impulsive
-            'phase_consistency': 0.6,           # Consistency > 0.6 suggests coherent
-            'energy_concentration': 0.5,        # Energy > 50% in band suggests localized
-            'snr': 7.0,                         # SNR > 7 dB suggests good signal quality
-            'repetition_regularity': 0.75       # Regularity > 0.75 suggests periodic
-        }
+        'kurtosis': 3.0,                    # Excess kurtosis > 3 suggests impulsive
+        'phase_consistency': 0.7,           # Consistency > 0.7 suggests coherent
+        'energy_concentration': 0.6,        # Energy > 60% in band suggests localized
+        'snr': 5.0,                         # SNR > 5 dB suggests good signal quality
+        'repetition_regularity': 0.8        # Regularity > 0.8 suggests periodic
+    }
     elif sensor == 'UHF':
         print(f'Using UHF-specific feature thresholds.')
         thresholds = {
@@ -588,7 +588,7 @@ def get_feature_thresholds(sensor):
         }
     # TODO add thresholds for HVCC 
     else:
-        # default thresholds for HVCC or unknown sensor types
+        # default thresholds for HVCC or additional sensor types
         print(f'Using default feature thresholds.')
         thresholds = {
         'kurtosis': 3.0,                    # Excess kurtosis > 3 suggests impulsive
