@@ -66,8 +66,8 @@ def main(configPath: pathlib.Path):
     # want to capture the variance of the actual data rather than the latent space 
     n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
-    data_normalised = data_normalised.reset_index(drop=True)
-    #data_normalised = data_normalised.sample(123050, random_state=seed).reset_index(drop=True)  # testing 
+    #data_normalised = data_normalised.reset_index(drop=True)
+    data_normalised = data_normalised.sample(12305, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -102,7 +102,7 @@ def main(configPath: pathlib.Path):
     optimiser = torch.optim.AdamW(autoencoder.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimiser, max_lr=1e-3, steps_per_epoch=len(loader), epochs=20)
     
-    train_pi_ae(autoencoder, loader, optimiser, scheduler, device=torch.device("cpu"), epochs=10)
+    train_pi_ae(autoencoder, loader, optimiser, scheduler, device=torch.device("cpu"), epochs=20)
     
     # Obtain latent space representation
     autoencoder.eval()
@@ -116,7 +116,8 @@ def main(configPath: pathlib.Path):
     # Noise filtering and clustering 
     print(f'\n[3/6] Filtering outliers and clustering...')
     # TODO optimize min_cluster_size based on physics informed approach
-    min_cluster = 30 
+    #min_cluster = min_cluster_calc(acqui_df, cfg , frequency=50) 
+    min_cluster = 30
     min_samples = 15
     
     # Add original IDs for later mapping
