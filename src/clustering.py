@@ -20,23 +20,22 @@ def isolationForest(df):
 
     Input should be the latent space produced by autoencoder. 
     Return filtered dataframe and scores
-
+    3% contamination assumed, don't want to remove authentic pd data 
     """
-    clf = IsolationForest(contamination=0.05, random_state = seed)
+    clf = IsolationForest(contamination=0.03, random_state = seed)
 
     clf.fit(df)
     pred = clf.predict(df)
 
     mask = pred == 1 
+   
     n_outliers = len(mask) - mask.sum()
-
+    
     cleaned_df = df[mask].copy()
+
     print(f'Isolation Forest removed {n_outliers} outliers from dataset of size {len(df)}.')
     return cleaned_df 
     
-
-    
-
 
 def min_cluster_calc(acqui_df, cfg , frequency=50):
     """
