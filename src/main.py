@@ -19,13 +19,15 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
 from utils import plot_clusters
-from data_preperation import getDataset, getNComponents, normaliseDataset, inverseTransform
+from data_preperation import getSensor, getEventCount, getNComponents, normaliseDataset, inverseTransform
 from autoencoder import PhysicsInformedAutoencoder, train_pi_ae
-from feature_extraction import extract_pd_features, normalise_features,get_feature_thresholds, analyze_features 
+from feature_extraction import extract_pd_features, normalise_features,get_feature_thresholds
 from clustering import hdbscan, isolationForest, min_cluster_calc
 from pd_selector import writeResults, assignWeights, aggregate_cluster_features, classify_clusters, computeScores, map_labels_to_events
 
 seed = 42 
+torch.manual_seed(seed)
+torch.backends.cudnn.deterministic = True
 
 def load_config(configPath: pathlib.Path):
 
@@ -60,18 +62,21 @@ def main(configPath: pathlib.Path):
     print("Configuration loaded successfully:")
     # normalise the raw data to get normal distribution 
     data_normalised, transformers = normaliseDataset(cfg)
-    
+    # calcualte n_components for pca for unmodified dataset
+    # want to capture the variance of the actual data rather than the latent space 
+    n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
     data_normalised = data_normalised.reset_index(drop=True)
     #data_normalised = data_normalised.sample(123050, random_state=seed).reset_index(drop=True)  # testing 
-
+    sensor = getSensor(cfg)
+    acqui_df = getEventCount(cfg)  
     # =======================================================
     # Feature Extraction and Normalisation
     # Domain specific feature extraction, kurtosis etc. 
     print("\n[1/6] Extracting domain features...")
-    pd_features = extract_pd_features(data_normalised)
+    pd_features = extract_pd_features(data_normalised.drop(columns=['id', 'acquisition_id']))
     normalised_features, domain_transformers = normalise_features(pd_features)
-
+    
     # =======================================================
     # Autoencoder Initialisation 
     # Select only the physical PD features (exclude id, acq_id columns)
@@ -94,9 +99,10 @@ def main(configPath: pathlib.Path):
         shuffle=True,
         drop_last=True)
     autoencoder = PhysicsInformedAutoencoder(signal_length=signal_length)    
-    optimiser = torch.optim.Adam(autoencoder.parameters(), lr=1e-3)
+    optimiser = torch.optim.AdamW(autoencoder.parameters(), lr=1e-3, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimiser, max_lr=1e-3, steps_per_epoch=len(loader), epochs=20)
     
-    train_pi_ae(autoencoder, loader, optimiser, device=torch.device("cpu"), epochs=5)
+    train_pi_ae(autoencoder, loader, optimiser, scheduler, device=torch.device("cpu"), epochs=10)
     
     # Obtain latent space representation
     autoencoder.eval()
@@ -110,15 +116,14 @@ def main(configPath: pathlib.Path):
     # Noise filtering and clustering 
     print(f'\n[3/6] Filtering outliers and clustering...')
     # TODO optimize min_cluster_size based on physics informed approach
-    min_cluster = 30
+    min_cluster = 30 
     min_samples = 15
     
     # Add original IDs for later mapping
     latent_df['id'] = data_normalised.index.values
     
     isolated_df = isolationForest(latent_df)
-    n_components = getNComponents(latent_df.drop(columns=['id']))
-    
+
     clustered_df = hdbscan(
         isolated_df.drop(columns=['id']), 
         n_components=n_components, 
@@ -133,7 +138,7 @@ def main(configPath: pathlib.Path):
     # =======================================================
     # PD classification 
     print(f'\n[4/6] Classifying PD vs noise...')
-    thresholds = get_feature_thresholds()
+    thresholds = get_feature_thresholds(sensor)
     weights = assignWeights(thresholds)
     
     # Filter features to match clustered samples (after isolation forest)
