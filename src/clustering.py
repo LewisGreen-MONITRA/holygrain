@@ -91,7 +91,7 @@ def hdbscan(df, n_components, min_cluster_size, min_samples, metric='euclidean')
     clf = HDBSCAN(min_cluster_size=min_cluster_size,
                    min_samples=min_samples,
                      metric=metric, 
-                     algorithm='kd_tree',
+                     algorithm='ball_tree',
                      n_jobs=-1)
     clf.fit(pca)
 
