@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 from utils import plot_clusters
 from data_preperation import getSensor, getEventCount, getNComponents, normaliseDataset, inverseTransform
 from autoencoder import PhysicsInformedAutoencoder, train_pi_ae
-from feature_extraction import extract_pd_features, normalise_features,get_feature_thresholds
+from feature_extraction import get_adaptive_thresholds, extract_pd_features, normalise_features,get_feature_thresholds
 from clustering import hdbscan, isolationForest, min_cluster_calc
 from pd_selector import writeResults, assignWeights, aggregate_cluster_features, classify_clusters, computeScores, map_labels_to_events
 
@@ -67,7 +67,7 @@ def main(configPath: pathlib.Path):
     n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
     #data_normalised = data_normalised.reset_index(drop=True)
-    data_normalised = data_normalised.sample(12305, random_state=seed).reset_index(drop=True)  # testing 
+    data_normalised = data_normalised.sample(124950, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -116,8 +116,8 @@ def main(configPath: pathlib.Path):
     # Noise filtering and clustering 
     print(f'\n[3/6] Filtering outliers and clustering...')
     # TODO optimize min_cluster_size based on physics informed approach
-    #min_cluster = min_cluster_calc(acqui_df, cfg , frequency=50) 
-    min_cluster = 30
+    min_cluster = min_cluster_calc(acqui_df, cfg , frequency=50) 
+    #min_cluster = 30
     min_samples = 15
     
     # Add original IDs for later mapping
@@ -139,9 +139,7 @@ def main(configPath: pathlib.Path):
     # =======================================================
     # PD classification 
     print(f'\n[4/6] Classifying PD vs noise...')
-    thresholds = get_feature_thresholds(sensor)
-    weights = assignWeights(thresholds)
-    
+  
     # Filter features to match clustered samples (after isolation forest)
     # Use the indices that survived isolation forest filtering
     filtered_indices = isolated_df.index.tolist()
@@ -151,11 +149,16 @@ def main(configPath: pathlib.Path):
     # Aggregate features at cluster level
     cluster_stats = aggregate_cluster_features(clustered_df_reset, filtered_features)
     
+   #thresholds = get_feature_thresholds(sensor)
+   # adaptive thresholding seems to have corrected the issue of no PD being detected
+    thresholds = get_adaptive_thresholds(cluster_stats)
+    weights = assignWeights(thresholds)
+
     # Compute scores for each cluster
     scores_df = computeScores(cluster_stats, thresholds, weights)
     
     # Classify clusters
-    classification_df = classify_clusters(scores_df, score_threshold=0.4, min_votes=2)
+    classification_df = classify_clusters(scores_df, score_threshold=0.35, min_votes=2)
     
     # Map classification back to events
     labeled_df = map_labels_to_events(clustered_df_reset, classification_df)
