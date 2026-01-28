@@ -564,12 +564,12 @@ def get_feature_thresholds(sensor):
     if sensor == 'HFCT':
         print(f'Using HFCT-specific feature thresholds.')
         thresholds = {
-        'kurtosis': 3.0,                    # Excess kurtosis > 3 suggests impulsive
-        'phase_consistency': 0.7,           # Consistency > 0.7 suggests coherent
-        'energy_concentration': 0.6,        # Energy > 60% in band suggests localized
-        'snr': 5.0,                         # SNR > 5 dB suggests good signal quality
-        'repetition_regularity': 0.8        # Regularity > 0.8 suggests periodic
-    }
+            'kurtosis': 2.5,           # Lowered from 3.0
+            'phase_consistency': 0.5,  # Lowered from 0.7
+            'energy_concentration': 0.4,  # Lowered from 0.6
+            'snr': 3.0,                # Lowered from 5.0
+            'repetition_regularity': 0.6  # Lowered from 0.8
+        }
     elif sensor == 'UHF':
         print(f'Using UHF-specific feature thresholds.')
         thresholds = {
@@ -600,4 +600,23 @@ def get_feature_thresholds(sensor):
         'repetition_regularity': 0.8        # Regularity > 0.8 suggests periodic
     }
     
+    return thresholds
+
+
+def get_adaptive_thresholds(cluster_stats, percentile=50):
+    """
+    Compute adaptive thresholds based on cluster statistics.
+    "Permanent" Placeholder, until sensor specific thresholds are tuned properly 
+    Perofrmance seems better with adaptive thresholds for now.
+    Args:
+        cluster_stats: DataFrame with aggregated cluster features
+        percentile: Percentile to use for thresholding (default=50)
+    """
+    thresholds = {
+        'kurtosis': cluster_stats['kurtosis_mean'].quantile(percentile/100),
+        'phase_consistency': cluster_stats['phase_consistency_mean'].quantile(percentile/100),
+        'energy_concentration': cluster_stats['energy_concentration_mean'].quantile(percentile/100),
+        'snr': cluster_stats['snr_mean'].quantile(percentile/100),
+        'repetition_regularity': cluster_stats['repetition_regularity_mean'].quantile(percentile/100)
+    }
     return thresholds
