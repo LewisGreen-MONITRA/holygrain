@@ -58,8 +58,7 @@ def assignWeights(feature_thresholds):
     :param feature_thresholds: Dict of feature name -> threshold value
     :returns: Dict of normalized weights summing to 1.0
     """
-    weights = {}
-    
+    weights =  {}
     # Assign inverse threshold as base weight (lower threshold = lower weight)
     for feature, threshold in feature_thresholds.items():
         if threshold > 0:
@@ -128,7 +127,7 @@ def computeScores(cluster_stats, feature_thresholds, weights=None):
 
    return scores_df
 
-def classify_clusters(scores_df, score_threshold=0.5, min_votes=3):
+def classify_clusters(scores_df, score_threshold=0.35, min_votes=2):
     """
     Classify clusters as PD or noise based on score and vote thresholds.
     
