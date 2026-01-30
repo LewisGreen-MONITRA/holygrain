@@ -5,6 +5,8 @@ Author: Lewis Green
 Date: 2024-06-15
 MOINTRA 
 """
+import cuml # TODO test cuml compatibility in accelerating hdbscan
+
 import numpy as np
 import pandas as pd
 import sqlite3
