@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 from utils import plot_clusters
 from data_preperation import getSensor, getEventCount, getNComponents, normaliseDataset, inverseTransform
 from autoencoder import PhysicsInformedAutoencoder, train_pi_ae
-from feature_extraction import get_adaptive_thresholds, extract_pd_features, normalise_features,get_feature_thresholds
+from feature_extraction import get_adaptive_thresholds, extract_pd_features, normalise_features, get_feature_thresholds
 from clustering import hdbscan, isolationForest, min_cluster_calc
 from pd_selector import writeResults, assignWeights, aggregate_cluster_features, classify_clusters, computeScores, map_labels_to_events
 
@@ -66,8 +66,8 @@ def main(configPath: pathlib.Path):
     # want to capture the variance of the actual data rather than the latent space 
     n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
-    #data_normalised = data_normalised.reset_index(drop=True)
-    data_normalised = data_normalised.sample(124950, random_state=seed).reset_index(drop=True)  # testing 
+    data_normalised = data_normalised.reset_index(drop=True)
+    #data_normalised = data_normalised.sample(514500, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -92,17 +92,24 @@ def main(configPath: pathlib.Path):
     data_tensor = torch.tensor(data_numeric.values, dtype=torch.float32)
     if len(data_tensor.shape) == 2:
         data_tensor = data_tensor.unsqueeze(1)
+        
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f'  Using device: {device}')
+    data_tensor = data_tensor.to(device)   
     
     loader = torch.utils.data.DataLoader(
         data_tensor,
-        batch_size=32,
+        batch_size=256,
         shuffle=True,
-        drop_last=True) 
-    autoencoder = PhysicsInformedAutoencoder(signal_length=signal_length)    
+        drop_last=True,
+        pin_memory=True,
+        num_workers=4) 
+    
+    autoencoder = PhysicsInformedAutoencoder(signal_length=signal_length).to(device)    
     optimiser = torch.optim.AdamW(autoencoder.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimiser, max_lr=1e-3, steps_per_epoch=len(loader), epochs=20)
-    
-    train_pi_ae(autoencoder, loader, optimiser, scheduler, device=torch.device("cpu"), epochs=20)
+ 
+    train_pi_ae(autoencoder, loader, optimiser, scheduler, device=device, epochs=20)
     
     # Obtain latent space representation
     autoencoder.eval()
@@ -149,16 +156,15 @@ def main(configPath: pathlib.Path):
     # Aggregate features at cluster level
     cluster_stats = aggregate_cluster_features(clustered_df_reset, filtered_features)
     
-   #thresholds = get_feature_thresholds(sensor)
    # adaptive thresholding seems to have corrected the issue of no PD being detected
-    thresholds = get_adaptive_thresholds(cluster_stats)
+    thresholds = get_adaptive_thresholds(cluster_stats, percentile=50)
     weights = assignWeights(thresholds)
 
     # Compute scores for each cluster
     scores_df = computeScores(cluster_stats, thresholds, weights)
     
     # Classify clusters
-    classification_df = classify_clusters(scores_df, score_threshold=0.35, min_votes=2)
+    classification_df = classify_clusters(scores_df, score_threshold=0.3, min_votes=2)
     
     # Map classification back to events
     labeled_df = map_labels_to_events(clustered_df_reset, classification_df)
@@ -209,5 +215,5 @@ def main(configPath: pathlib.Path):
 
 
 if __name__ == "__main__":
-    configPath = pathlib.Path("C:/Users/ldgre/Desktop/wfh/holy-grain/config.json")
+    configPath = pathlib.Path("C:/Users/lewis.green/Desktop/holy grain/config.json")
     main(configPath)
