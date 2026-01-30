@@ -292,7 +292,7 @@ def writeResults(df, classification_df, cfg, path):
   Event_Cluster block
   """
   cluster_mapping = cluster_df.set_index('clusterNumber')['id'].to_dict()
-  clusters_id = labeled_data['cluster'].map(cluster_mapping).values
+  clusters_id = df['cluster'].map(cluster_mapping).values
 
   events_cluster = pd.DataFrame({
     'events_id': df['id'],
