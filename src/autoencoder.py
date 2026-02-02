@@ -127,37 +127,31 @@ class PhysicsInformedAutoencoder(nn.Module):
     def _wavelet_coeffs(signal: torch.Tensor, wavelet: str) -> torch.Tensor:
         """
         Compute the wavelet detail coefficients for each sample in *signal*.
-        PyWavelets operates on NumPy arrays, so we perform the conversion
-        sample by sample.  The result is a 2D tensor of shape (B, C),
-        where C is the total number of detail coefficients.
+        Vectorized implementation: applies wavelet transform across the batch axis.
+        The result is a 2D tensor of shape (B, C), where C is the total number 
+        of detail coefficients.
         """
         B, _, L = signal.shape
-        coeffs = []
-
-        # Convert to CPU numpy for the transform 
-        for i in range(B):
-            try:
-                coeff = pywt.wavedec(signal[i, 0, :].detach().cpu().numpy(),
-                                     wavelet=wavelet,
-                                     level=None)  # all levels
-                detail_list = [c for c in coeff[1:]]
-                # Handle case where no detail coefficients exist (short signals)
-                if detail_list:
-                    detail = np.concatenate(detail_list)
-                else:
-                    # For very short signals, use the signal itself as fallback
-                    detail = signal[i, 0, :].detach().cpu().numpy()
-                    
-                coeffs.append(detail)
-            except Exception as e:
-                # Fallback: use signal as-is if wavelet decomposition fails
-                coeffs.append(signal[i, 0,
-                                      :].detach().cpu().numpy())
-
-        # Pad to the same length (if needed)
-        max_len = max(len(c) for c in coeffs)
-        coeffs_padded = np.array([np.pad(c, (0, max_len - len(c))) for c in coeffs])
-        return torch.tensor(coeffs_padded, dtype=signal.dtype, device=signal.device)
+        
+        # Convert entire batch to numpy at once (single transfer)
+        signal_np = signal[:, 0, :].detach().cpu().numpy()  # (B, L)
+        
+        try:
+            # Vectorized wavelet decomposition across batch (axis=1 applies per-sample)
+            coeffs = pywt.wavedec(signal_np, wavelet=wavelet, level=None, axis=1)
+            
+            # Concatenate all detail coefficients (exclude approximation coeffs[0])
+            if len(coeffs) > 1:
+                detail_coeffs = np.concatenate(coeffs[1:], axis=1)  # (B, C)
+            else:
+                # Fallback for very short signals
+                detail_coeffs = signal_np
+                
+        except Exception as e:
+            # Fallback: use signal as-is if wavelet decomposition fails
+            detail_coeffs = signal_np
+        
+        return torch.tensor(detail_coeffs, dtype=signal.dtype, device=signal.device)
 
     def compute_wavelet_loss(self, recon: torch.Tensor) -> torch.Tensor:
         """

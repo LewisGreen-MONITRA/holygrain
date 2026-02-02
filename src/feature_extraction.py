@@ -68,8 +68,8 @@ def compute_kurtosis(data):
         if len(data.shape) == 1:
             return stats.kurtosis(data, fisher=True)
         else:
-            # Compute across features for each sample
-            kurtosis_vals = np.array([stats.kurtosis(sample, fisher=True) for sample in data])
+            # Vectorized: compute kurtosis across features for each sample (axis=1)
+            kurtosis_vals = stats.kurtosis(data, fisher=True, axis=1)
     
     return kurtosis_vals
 
@@ -120,31 +120,19 @@ def compute_phase_consistency(data, reference_phase=None):
         return consistency
     
     else:
-        # Multiple samples
-        consistency_scores = []
+        # Multiple samples - vectorized computation
+        # Compute analytic signal for all samples at once (axis=1 applies per-row)
+        analytic = signal.hilbert(data, axis=1)
         
-        for sample in data:
-            # Compute analytic signal (complex representation)
-            analytic = signal.hilbert(sample)
-            
-            # Extract instantaneous phase
-            phase = np.angle(analytic)
-            
-            # Measure phase consistency:
-            # Option 1: Circular variance (how concentrated phases are)
-            # sin_mean = np.mean(np.sin(phase))
-            # cos_mean = np.mean(np.cos(phase))
-            # r = np.sqrt(sin_mean**2 + cos_mean**2)  # Resultant vector length
-            # consistency = r  # [0, 1]
-            
-            # Option 2: Phase velocity regularity
-            phase_velocity = np.diff(phase)
-            velocity_std = np.std(phase_velocity)
-            consistency = 1.0 / (1.0 + velocity_std)
-            
-            consistency_scores.append(consistency)
+        # Extract instantaneous phase for all samples
+        phase = np.angle(analytic)
         
-        return np.array(consistency_scores)
+        # Vectorized phase velocity computation
+        phase_velocity = np.diff(phase, axis=1)
+        velocity_std = np.std(phase_velocity, axis=1)
+        consistency_scores = 1.0 / (1.0 + velocity_std)
+        
+        return consistency_scores
 
 
 # ============================================================================
@@ -202,34 +190,33 @@ def compute_energy_concentration(data, freq_band=None):
         return concentration
     
     else:
-        # Multiple samples
-        concentrations = []
+        # Multiple samples - vectorized FFT computation
+        # Compute FFT for all samples at once (axis=1 applies per-row)
+        fft = np.fft.fft(data, axis=1)
+        power = np.abs(fft) ** 2
         
-        for sample in data:
-            # Compute FFT
-            fft = np.fft.fft(sample)
-            power = np.abs(fft) ** 2
-            
-            # Exclude DC component and upper half (by symmetry)
-            power = power[:len(power)//2]
-            total_energy = np.sum(power)
-            
-            if freq_band is None:
-                # Energy in central 80% of spectrum (exclude tails)
-                idx_min = int(0.1 * len(power))
-                idx_max = int(0.9 * len(power))
-            else:
-                # Convert frequency to index
-                # Assume freq_band is in normalized units [0, 1]
-                idx_min = int(freq_band[0] * len(power))
-                idx_max = int(freq_band[1] * len(power))
-            
-            band_energy = np.sum(power[idx_min:idx_max])
-            concentration = band_energy / total_energy if total_energy > 0 else 0.0
-            
-            concentrations.append(concentration)
+        # Exclude upper half (by symmetry) - take first half of each row
+        half_len = power.shape[1] // 2
+        power = power[:, :half_len]
         
-        return np.array(concentrations)
+        # Total energy per sample
+        total_energy = np.sum(power, axis=1)
+        
+        # Determine frequency band indices
+        if freq_band is None:
+            idx_min = int(0.1 * half_len)
+            idx_max = int(0.9 * half_len)
+        else:
+            idx_min = int(freq_band[0] * half_len)
+            idx_max = int(freq_band[1] * half_len)
+        
+        # Band energy for all samples
+        band_energy = np.sum(power[:, idx_min:idx_max], axis=1)
+        
+        # Avoid division by zero
+        concentrations = np.where(total_energy > 0, band_energy / total_energy, 0.0)
+        
+        return concentrations
 
 
 # ============================================================================
@@ -304,14 +291,40 @@ def compute_snr(data, method='peak_to_rms'):
         return snr_db
     
     else:
-        # Multiple samples
-        snr_values = []
+        # Multiple samples - vectorized computation
+        if method == 'peak_to_rms':
+            # Vectorized peak and RMS computation
+            peak = np.max(np.abs(data), axis=1)
+            rms = np.sqrt(np.mean(data ** 2, axis=1))
+            snr = np.where(rms > 0, peak / rms, 0)
+            snr_db = 20 * np.log10(snr + 1e-10)
+            
+        elif method == 'spectral':
+            # Vectorized FFT
+            fft = np.fft.fft(data, axis=1)
+            half_len = data.shape[1] // 2
+            power = np.abs(fft[:, :half_len]) ** 2
+            
+            # Signal: central 60% of spectrum
+            sig_min, sig_max = int(0.2 * half_len), int(0.8 * half_len)
+            signal_power = np.sum(power[:, sig_min:sig_max], axis=1)
+            
+            # Noise: tails
+            noise_power = np.sum(power[:, :sig_min], axis=1) + np.sum(power[:, sig_max:], axis=1)
+            
+            snr = signal_power / (noise_power + 1e-10)
+            snr_db = 10 * np.log10(snr + 1e-10)
+            
+        elif method == 'envelope':
+            # Vectorized Hilbert transform
+            analytic = signal.hilbert(data, axis=1)
+            envelope = np.abs(analytic)
+            peak = np.max(envelope, axis=1)
+            baseline = np.mean(envelope, axis=1)
+            snr = peak / (baseline + 1e-10)
+            snr_db = 20 * np.log10(snr + 1e-10)
         
-        for sample in data:
-            snr = compute_snr(sample, method=method)
-            snr_values.append(snr)
-        
-        return np.array(snr_values)
+        return snr_db
 
 
 # ============================================================================
