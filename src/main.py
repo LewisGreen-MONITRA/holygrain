@@ -68,8 +68,8 @@ def main(configPath: pathlib.Path):
     # want to capture the variance of the actual data rather than the latent space 
     n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
-    data_normalised = data_normalised.reset_index(drop=True)
-    #data_normalised = data_normalised.sample(514500, random_state=seed).reset_index(drop=True)  # testing 
+    #data_normalised = data_normalised.reset_index(drop=True)
+    data_normalised = data_normalised.sample(125321, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -95,17 +95,27 @@ def main(configPath: pathlib.Path):
     if len(data_tensor.shape) == 2:
         data_tensor = data_tensor.unsqueeze(1)
         
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Safe device detection with CUDA error handling
+    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.init()
+            device = torch.device("cuda")
+        except Exception as e:
+            print(f"  Warning: CUDA available but initialization failed: {e}")
+            print(f"  Falling back to CPU")
     print(f'  Using device: {device}')
     data_tensor = data_tensor.to(device)   
     
+    # Adjust DataLoader settings based on device
+    use_cuda = device.type == "cuda"
     loader = torch.utils.data.DataLoader(
         data_tensor,
         batch_size=256,
         shuffle=True,
         drop_last=True,
-        pin_memory=True,
-        num_workers=4) 
+        pin_memory=use_cuda,
+        num_workers=4 if use_cuda else 0)  # num_workers=0 for CPU on Windows
     
     autoencoder = PhysicsInformedAutoencoder(signal_length=signal_length).to(device)    
     optimiser = torch.optim.AdamW(autoencoder.parameters(), lr=1e-3, weight_decay=1e-4)
