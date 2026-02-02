@@ -12,7 +12,7 @@ from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_har
 def plot_clusters(df):
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    scatter = ax.scatter(df['observedTime_ms'], df['energy'], c=df['is_pd'], cmap='tab20', s=10)
+    scatter = ax.scatter(df['observedTime_ms'], df['energy'], c=df['cluster'], cmap='tab20', s=10)
     legend1 = ax.legend(*scatter.legend_elements(), title="Clusters")
     ax.add_artist(legend1)
     ax.set_title('Clustering Results')
