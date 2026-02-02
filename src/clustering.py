@@ -86,13 +86,23 @@ def hdbscan(df, n_components, min_cluster_size, min_samples, metric='euclidean')
     """
 
     print(f'Running HDBSCAN clustering with min_cluster_size={min_cluster_size} and PCA n_components={n_components}...')
-    print("This may take some time...")
+    
+    # PCA for dimensionality reduction (speeds up distance calculations)
     pca = PCA(n_components=n_components).fit_transform(df)
-    clf = HDBSCAN(min_cluster_size=min_cluster_size,
-                   min_samples=min_samples,
-                     metric=metric, 
-                     algorithm='ball_tree',
-                     n_jobs=-1)
+    
+    n_samples = len(pca)
+    print(f'  Processing {n_samples} samples...')
+    
+    # Optimized HDBSCAN configuration for sklearn
+    clf = HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        metric=metric,
+        algorithm='kd_tree' if metric == 'euclidean' else 'ball_tree',  # kd_tree faster for euclidean
+        leaf_size=40,                # Tuned for performance
+        n_jobs=-1,                   # Parallel processing
+        store_centers='centroid'     # Store cluster centers for analysis
+    )
     clf.fit(pca)
 
     labels = clf.labels_ 
@@ -105,4 +115,4 @@ def hdbscan(df, n_components, min_cluster_size, min_samples, metric='euclidean')
 
     df['cluster'] = labels 
     
-    return  df 
+    return df 
