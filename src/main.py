@@ -5,7 +5,12 @@ Author: Lewis Green
 Date: 2024-06-15
 MOINTRA 
 """
-import cuml # TODO test cuml compatibility in accelerating hdbscan
+#import cuml # TODO test cuml compatibility in accelerating hdbscan
+import os 
+os.environ['OMP_NUM_THREADS'] = '4'  # Limit to 4 threads for consistency
+os.environ['MKL_NUM_THREADS'] = '4'
+os.environ['OPENBLAS_NUM_THREADS'] = '4'
+
 
 import numpy as np
 import pandas as pd
@@ -20,7 +25,7 @@ import torch.nn.functional as F
 
 import matplotlib.pyplot as plt
 
-from utils import plot_clusters
+from utils import plot_clusters, sampleDataset
 from data_preperation import getSensor, getEventCount, getNComponents, normaliseDataset, inverseTransform
 from autoencoder import PhysicsInformedAutoencoder, train_pi_ae
 from feature_extraction import get_adaptive_thresholds, extract_pd_features, normalise_features, get_feature_thresholds
@@ -68,8 +73,8 @@ def main(configPath: pathlib.Path):
     # want to capture the variance of the actual data rather than the latent space 
     n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
-    #data_normalised = data_normalised.reset_index(drop=True)
-    data_normalised = data_normalised.sample(125321, random_state=seed).reset_index(drop=True)  # testing 
+    data_normalised = data_normalised.reset_index(drop=True)
+    #data_normalised = data_normalised.sample(125321, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -169,7 +174,7 @@ def main(configPath: pathlib.Path):
     cluster_stats = aggregate_cluster_features(clustered_df_reset, filtered_features)
     
    # adaptive thresholding seems to have corrected the issue of no PD being detected
-    thresholds = get_adaptive_thresholds(cluster_stats, percentile=50)
+    thresholds = get_adaptive_thresholds(cluster_stats, percentile=75)
     weights = assignWeights(thresholds)
 
     # Compute scores for each cluster
