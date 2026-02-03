@@ -65,3 +65,4 @@ Training times for this pipeline can be high when datasets contain large number 
 Options to reduce training time include:
 * Subsampling dataset to reduce event count and then map the labels back to the full dataset using K-Nearest Neighbors. Although this approach would break the physics informed nature of the pipeline. 
 * Utilising GPU acceleration for auto-encoder training and HDBSCAN execution. cuML library has HDBSCAN implementation that can be used to speed up clustering times. Script could then be run on RDS with the nvidia GPU instance.   
+* Calculate a sample size that captures a statistically significant number of events to be representative of the full dataset. Using this sample size to subsample the dataset for training.
