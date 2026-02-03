@@ -41,12 +41,12 @@ Supports HFCT, UHF, HVCC and TEV. For each cluster, confidence scores are calcul
 1. **Config File. Contains path to database, channel number, acquisition start and end time.** 
 2. **Data pulled from db to script, normalised, sensor information and event count acquired.** 
 3. **PD Features Extracted and normalised.** 
-4. **Auto-Encoder trained on normalised data, returns latent embeddings after reconstruction** 
+4. **Auto-Encoder trained on normalised data, returns latent embeddings after reconstruction.** 
 5. **Latent Embeddings passed to isolation forest for initial outlier removal. Returns clean "Isolated" data.** 
-6. **Isolated Data passed to HDBSCAN, clusters are identified** 
+6. **Isolated Data passed to HDBSCAN, clusters are identified.** 
 7. **Thresholds and weights calculated based on sensor type, passed onto the voting classifier.**  
 8. **Ensemble voting performed, returns labelled classification per cluster for pd/noise.**
-9. **PD/Noise labels mapped back to each event** 
+9. **PD/Noise labels mapped back to each event.** 
 10. **Results Written back to db, later to be used in Hyperion Heatmap-Viewer to produce PRPD pattern.**
 
 ### **Parameter Tuning**
@@ -63,5 +63,5 @@ Current support for kd_tree and ball_tree algorithms for HDBSCAN implementation.
 #### **What to do with datasets with high number of events?**
 Training times for this pipeline can be high when datasets contain large number of events (>1 million) with runtime taking hours on cpu. Suggest utilsiing when event count ~500k, taking roughly 40 minutes on i5-14500. 
 Options to reduce training time include:
-* Subsampling dataset to reduce event count. Although this breaks the physics informed nature of the pipeline. 
+* Subsampling dataset to reduce event count and then map the labels back to the full dataset using K-Nearest Neighbors. Although this approach would break the physics informed nature of the pipeline. 
 * Utilising GPU acceleration for auto-encoder training and HDBSCAN execution. cuML library has HDBSCAN implementation that can be used to speed up clustering times. Script could then be run on RDS with the nvidia GPU instance.   
