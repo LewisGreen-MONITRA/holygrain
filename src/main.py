@@ -7,10 +7,14 @@ MOINTRA
 """
 #import cuml # TODO test cuml compatibility in accelerating hdbscan
 import os 
-os.environ['OMP_NUM_THREADS'] = '4'  # Limit to 4 threads for consistency
-os.environ['MKL_NUM_THREADS'] = '4'
-os.environ['OPENBLAS_NUM_THREADS'] = '4'
-
+import multiprocessing
+n_cores = os.cpu_count()
+n_threads = max(1, n_cores - 2,4) 
+os.environ['OMP_NUM_THREADS'] = str(n_threads)  # Limit to 4 threads for consistency
+os.environ['MKL_NUM_THREADS'] = str(n_threads)
+os.environ['OPENBLAS_NUM_THREADS'] = str(n_threads)
+os.environ['NUMEXPR_NUM_THREADS'] = str(n_threads)
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
 
 import numpy as np
 import pandas as pd
@@ -73,8 +77,8 @@ def main(configPath: pathlib.Path):
     # want to capture the variance of the actual data rather than the latent space 
     n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
-    data_normalised = data_normalised.reset_index(drop=True)
-    #data_normalised = data_normalised.sample(125321, random_state=seed).reset_index(drop=True)  # testing 
+    #data_normalised = data_normalised.reset_index(drop=True)
+    data_normalised = data_normalised.sample(1253210, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -110,17 +114,19 @@ def main(configPath: pathlib.Path):
             print(f"  Warning: CUDA available but initialization failed: {e}")
             print(f"  Falling back to CPU")
     print(f'  Using device: {device}')
-    data_tensor = data_tensor.to(device)   
     
-    # Adjust DataLoader settings based on device
+    # Keep data on CPU for DataLoader, let it handle device transfer
+    # pin_memory only works with CPU tensors
     use_cuda = device.type == "cuda"
     loader = torch.utils.data.DataLoader(
-        data_tensor,
+        data_tensor,  # Keep on CPU
         batch_size=256,
         shuffle=True,
         drop_last=True,
-        pin_memory=use_cuda,
-        num_workers=4 if use_cuda else 0)  # num_workers=0 for CPU on Windows
+        pin_memory=use_cuda,  # Pin CPU memory for faster GPU transfer
+        num_workers=0,  # Must be 0 on Windows with CUDA
+        persistent_workers=False
+        ) 
     
     autoencoder = PhysicsInformedAutoencoder(signal_length=signal_length).to(device)    
     optimiser = torch.optim.AdamW(autoencoder.parameters(), lr=1e-3, weight_decay=1e-4)
@@ -131,7 +137,9 @@ def main(configPath: pathlib.Path):
     # Obtain latent space representation
     autoencoder.eval()
     with torch.no_grad():
-        latent_space = autoencoder.encode(data_tensor).numpy()
+        # Move data to device for encoding, then back to CPU for numpy
+        data_on_device = data_tensor.to(device)
+        latent_space = autoencoder.encode(data_on_device).cpu().numpy()
         latent_df = pd.DataFrame(latent_space, columns=[f'latent_{i}' for i in range(latent_space.shape[1])])
 
     print(f'  Latent space shape: {latent_df.shape}')
@@ -232,5 +240,5 @@ def main(configPath: pathlib.Path):
 
 
 if __name__ == "__main__":
-    configPath = pathlib.Path("C:/Users/lewis.green/Desktop/holy grain/config.json")
+    configPath = pathlib.Path("C:/Users/ldgre/Desktop/wfh/holy-grain/config.json")
     main(configPath)

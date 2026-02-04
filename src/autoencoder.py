@@ -171,7 +171,7 @@ class PhysicsInformedAutoencoder(nn.Module):
             return torch.tensor(0.0, device=latent.device)
         diff = latent[1:] - latent[:-1]
         return torch.mean(torch.abs(diff))
-
+    
     def compute_losses(
         self,
         x: torch.Tensor,
@@ -223,10 +223,15 @@ def train_pi_ae(
     scheduler,
     device: torch.device = torch.device("cpu"),
     epochs: int = 20,
-    patience = 5 
+    patience = 3,
+    min_delta: float = 1e-4
 ):
     model.to(device)
     model.train()
+
+    best_loss = float("inf")
+    epochs_no_improve = 0
+    best_state = None
 
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -255,5 +260,23 @@ def train_pi_ae(
             f"Wavelet: {losses['wavelet']:.6f}  "
             f"Temporal: {losses['temporal']:.6f}"
         )
+
+        # Early stopping check
+        if epoch_loss < (best_loss - min_delta):
+            best_loss = epoch_loss
+            epochs_no_improve = 0
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+        else:
+            epochs_no_improve += 1
+
+        if epochs_no_improve >= patience:
+            print(
+                f"Early stopping at epoch {epoch+1:02d}. "
+                f"Best loss: {best_loss:.6f}"
+            )
+            if best_state is not None:
+                model.load_state_dict(best_state)
+                model.to(device)
+            break
 
 

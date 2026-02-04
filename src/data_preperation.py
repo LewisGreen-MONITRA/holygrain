@@ -157,11 +157,14 @@ def getNComponents(df):
     """
     Estimated the number of components needed to explain 95% of variance within any given dataset
     Pass number of componets to PCA.
+    Uses randomized PCA for faster computation on large datasets.
 
     :param df: Description
     """
-
-    pca = PCA(None).fit(df)
+    n_samples = len(df)
+    # Use randomized SVD solver for faster computation on large datasets
+    pca_solver = 'randomized' if n_samples > 10000 else 'full'
+    pca = PCA(n_components=None, svd_solver=pca_solver, random_state=seed).fit(df)
 
     y = np.cumsum(pca.explained_variance_ratio_)
     x = np.arange(1, len(y) + 1) 

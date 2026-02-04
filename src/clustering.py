@@ -87,11 +87,15 @@ def hdbscan(df, n_components, min_cluster_size, min_samples, metric='euclidean')
 
     print(f'Running HDBSCAN clustering with min_cluster_size={min_cluster_size} and PCA n_components={n_components}...')
     
-    # PCA for dimensionality reduction (speeds up distance calculations)
-    pca = PCA(n_components=n_components).fit_transform(df)
+    # Ensure float32 for faster CPU math and lower memory use
+    df = df.astype(np.float32, copy=False)
+
+    n_samples = len(df)
+    pca_solver = 'randomized' if n_samples > 10000 else 'full'
+    print(f'  Processing {n_samples} samples with {pca_solver} PCA...')
     
-    n_samples = len(pca)
-    print(f'  Processing {n_samples} samples...')
+    pca_transformer = PCA(n_components=n_components, svd_solver=pca_solver, random_state=seed)
+    pca = pca_transformer.fit_transform(df)
     
     # Optimized HDBSCAN configuration for sklearn
     clf = HDBSCAN(
@@ -101,7 +105,7 @@ def hdbscan(df, n_components, min_cluster_size, min_samples, metric='euclidean')
         algorithm='kd_tree' if metric == 'euclidean' else 'ball_tree',  # kd_tree faster for euclidean
         leaf_size=40,                # Tuned for performance
         n_jobs=-1,                   # Parallel processing
-        store_centers='centroid'     # Store cluster centers for analysis
+        store_centers='centroid',    # Store cluster centers for analysis
     )
     clf.fit(pca)
 

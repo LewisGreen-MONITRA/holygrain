@@ -483,38 +483,45 @@ def extract_pd_features(data, clustering_labels=None, raw_signals=None):
                     - repetition_regularity: Pattern regularity (0-1, higher for PD)
     """
     
-    # Initialize feature dictionary
-    features = {}
+    # Pre-allocate numpy arrays for better memory efficiency and speed
+    n_samples = len(data)
+    features = {
+        'kurtosis': np.empty(n_samples, dtype=np.float32),
+        'phase_consistency': np.empty(n_samples, dtype=np.float32),
+        'energy_concentration': np.empty(n_samples, dtype=np.float32),
+        'snr': np.empty(n_samples, dtype=np.float32),
+        'repetition_regularity': np.empty(n_samples, dtype=np.float32)
+    }
     
     # ========================================================================
-    # Extract each feature
+    # Extract each feature (results written directly to pre-allocated arrays)
     # ========================================================================
     
     print("[1/5] Computing kurtosis...")
-    features['kurtosis'] = compute_kurtosis(data)
+    features['kurtosis'][:] = compute_kurtosis(data)
     
     print("[2/5] Computing phase consistency...")
-    features['phase_consistency'] = compute_phase_consistency(data)
+    features['phase_consistency'][:] = compute_phase_consistency(data)
     
     print("[3/5] Computing energy concentration...")
-    features['energy_concentration'] = compute_energy_concentration(data)
+    features['energy_concentration'][:] = compute_energy_concentration(data)
     
     print("[4/5] Computing SNR...")
-    features['snr'] = compute_snr(data, method='peak_to_rms')
+    features['snr'][:] = compute_snr(data, method='peak_to_rms')
     
     print("[5/5] Computing repetition regularity...")
     # This one needs clustering info or time info
     if clustering_labels is not None:
         rep_reg = compute_repetition_regularity(data, clustering_labels)
         # Convert dict to array matching data order
-        features['repetition_regularity'] = np.array([
+        features['repetition_regularity'][:] = np.array([
             rep_reg.get(label, 0.5) for label in clustering_labels
-        ])
+        ], dtype=np.float32)
     else:
-        features['repetition_regularity'] = compute_repetition_regularity(data)
+        features['repetition_regularity'][:] = compute_repetition_regularity(data)
     
     # ========================================================================
-    # Combine into DataFrame
+    # Combine into DataFrame (zero-copy from pre-allocated arrays)
     # ========================================================================
     
     features_df = pd.DataFrame(features)
