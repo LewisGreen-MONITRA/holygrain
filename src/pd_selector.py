@@ -190,6 +190,62 @@ def map_labels_to_events(clustered_df, classification_df):
 
     return labeled_data
 
+def subtype_classification(cluster_stats):
+    """
+    Optional: Further classify PD events into subtypes based on feature patterns.
+    should be a physics informed appraoched rather than using pure ml 
+    done at the cluster level then mapped back to events to maintain schema integrity. 
+
+
+    
+    :param cluster_stats: DataFrame with cluster level statistics
+    :returns: DataFrame with additional subtype classifications
+    """
+    # Placeholder for subtype classification logic
+    # For example, could classify PD events into  slot discharge, corona, etc. based on feature thresholds
+    # Potentially utilise hidden markov models to model pd types as latent regimes in the data. 
+    # produce a prediction of pd type with conficdence score 
+    # create a physics rule engine to interpret these predictions into subtype classifications.
+    # rules for each of the subtypes to be defined based on domain knowledge 
+    # for each cluster 
+    # label if pd or not 
+    # if pd, apply rules and create confidence score for each subtype classification
+    # highest score -> aggisn subtype label to cluster
+    # map back to events as per previous function
+    # if not pd then subtype = 'noise' 
+
+    # need to define a feature set at the cluster level 
+    # so aggregate features from feature extraction step to cluster level
+    # can pull those stats straight from the cluster_stats dataframe produced in the previous step. 
+    # then define thresholds for each subtype classification based on these features.
+    
+    
+
+    # set thresholds for each subtype 
+
+    internal = { # internal delamination 
+       
+       
+    }
+    
+    surface = { # slot discharge etc. 
+    
+    }
+
+    corona = {
+       
+       
+    }
+
+    floating = { 
+       
+    }
+
+    
+
+    return
+
+
 def writeResults(df, classification_df, cfg, path):    
   """
   Write Cluster Labels to Cluster db.
@@ -254,8 +310,8 @@ def writeResults(df, classification_df, cfg, path):
   if classification_df is not None and not classification_df.empty:
     pd_mapping = classification_df.set_index('cluster')['is_pd'].to_dict()
   else:
-    # Default: all clusters are PD if no classification provided
-    pd_mapping = {c: 1 for c in clusters}
+    # Default: no clusters are PD if no classification provided
+    pd_mapping = {c: 0 for c in clusters}
   
   # Build cluster data with is_pd flag
   cluster_data = pd.DataFrame({
@@ -263,7 +319,7 @@ def writeResults(df, classification_df, cfg, path):
     'process_id': process_id,
     'is_pd': [pd_mapping.get(c, 0) for c in clusters]  # Default to noise if not found
   })
-  
+
   # Ensure Cluster table has is_pd column
   cursor.execute("""
     CREATE TABLE IF NOT EXISTS Cluster (
@@ -277,10 +333,10 @@ def writeResults(df, classification_df, cfg, path):
   conn.commit()
   
   cluster_query = """
-  INSERT INTO Cluster (clusterNumber, process_id, is_pd)
-  VALUES (?, ?, ?)
+  INSERT INTO Cluster (clusterNumber, process_id)
+  VALUES (?, ?)
   """
-  cursor.executemany(cluster_query, cluster_data.values.tolist())
+  cursor.executemany(cluster_query, cluster_data[['clusterNumber', 'process_id']].values.tolist())
   conn.commit()
   
   cluster_df = pd.read_sql_query(
@@ -294,8 +350,14 @@ def writeResults(df, classification_df, cfg, path):
   cluster_mapping = cluster_df.set_index('clusterNumber')['id'].to_dict()
   clusters_id = df['cluster'].map(cluster_mapping).values
 
+  events_id = df['id']
+  if isinstance(events_id, pd.DataFrame):
+    events_id = events_id.iloc[:, 0]
+  elif isinstance(events_id, np.ndarray) and events_id.ndim > 1:
+    events_id = events_id[:, 0]
+
   events_cluster = pd.DataFrame({
-    'events_id': df['id'],
+    'events_id': events_id,
     'clusters_id': clusters_id
   })
 
