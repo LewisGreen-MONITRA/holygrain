@@ -47,8 +47,6 @@ def min_cluster_calc(acqui_df, cfg , frequency=50):
     Assume weakest plausible pd rate, estimate minimum pulses/cycle 
     Multiply by the cycles 0.2 ppc => surface discharges. 500 cycles => 100 events, forms the lower bound
     Apply saftey margin ~3x should filter switching spikes but retain pd activity.
-    300 events minimum cluster size? 
-
     
     frqeuency: System frequency in Hz 50 or 60 (usa) default 50 
     eval_window: Evaluation window in seconds
@@ -68,7 +66,7 @@ def min_cluster_calc(acqui_df, cfg , frequency=50):
 
     safety_margin = 3
 
-    min_cluster_size = int(avg_events // safety_margin) # lower bound estimate 
+    min_cluster_size = int(avg_events * safety_margin) # lower bound estimate 
     
     return min_cluster_size
     
