@@ -5,16 +5,17 @@ Author: Lewis Green
 Date: 2024-06-15
 MOINTRA 
 """
-#import cuml # TODO test cuml compatibility in accelerating hdbscan
+
 import os 
+import sys 
 import multiprocessing
 n_cores = os.cpu_count()
 n_threads = max(1, n_cores - 2,4) 
-os.environ['OMP_NUM_THREADS'] = str(n_threads)  # Limit to 4 threads for consistency
+os.environ['OMP_NUM_THREADS'] = str(n_threads)  
 os.environ['MKL_NUM_THREADS'] = str(n_threads)
 os.environ['OPENBLAS_NUM_THREADS'] = str(n_threads)
 os.environ['NUMEXPR_NUM_THREADS'] = str(n_threads)
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
+
 
 import numpy as np
 import pandas as pd
@@ -78,7 +79,8 @@ def main(configPath: pathlib.Path):
     n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
     #data_normalised = data_normalised.reset_index(drop=True)
-    data_normalised = data_normalised.sample(1253210, random_state=seed).reset_index(drop=True)  # testing 
+    #data_normalised = sampleDataset(data_normalised, seed)
+    data_normalised = data_normalised.sample(123456, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -120,11 +122,11 @@ def main(configPath: pathlib.Path):
     use_cuda = device.type == "cuda"
     loader = torch.utils.data.DataLoader(
         data_tensor,  # Keep on CPU
-        batch_size=256,
+        batch_size=512,
         shuffle=True,
         drop_last=True,
         pin_memory=use_cuda,  # Pin CPU memory for faster GPU transfer
-        num_workers=0,  # Must be 0 on Windows with CUDA
+        num_workers=0,  
         persistent_workers=False
         ) 
     
@@ -147,9 +149,7 @@ def main(configPath: pathlib.Path):
     # =======================================================
     # Noise filtering and clustering 
     print(f'\n[3/6] Filtering outliers and clustering...')
-    # TODO optimize min_cluster_size based on physics informed approach
-    min_cluster = min_cluster_calc(acqui_df, cfg , frequency=50) 
-    #min_cluster = 30
+    min_cluster = min_cluster_calc(acqui_df, cfg, frequency=50) 
     min_samples = 15
     
     # Add original IDs for later mapping
@@ -180,7 +180,7 @@ def main(configPath: pathlib.Path):
     
     # Aggregate features at cluster level
     cluster_stats = aggregate_cluster_features(clustered_df_reset, filtered_features)
-    
+    print(cluster_stats.head())
    # adaptive thresholding seems to have corrected the issue of no PD being detected
     thresholds = get_adaptive_thresholds(cluster_stats, percentile=75)
     weights = assignWeights(thresholds)
@@ -227,9 +227,8 @@ def main(configPath: pathlib.Path):
     # =======================================================
     # Write Results to db 
     print(f'\n[6/6] Writing results to database...')
-    print(data_normalised.head(1))
-    plot_clusters(data_normalised)
-    #writeResults(data_normalised, classification_df, cfg, configPath)
+    #plot_clusters(data_normalised)
+    writeResults(data_normalised, classification_df, cfg, configPath)
     
     print("\n" + "="*60)
     print("        AUTOMATED DE-NOISING COMPLETE")
@@ -240,5 +239,14 @@ def main(configPath: pathlib.Path):
 
 
 if __name__ == "__main__":
-    configPath = pathlib.Path("C:/Users/ldgre/Desktop/wfh/holy-grain/config.json")
+
+    configPath = pathlib.Path("C:/Users/lewis.green/Desktop/holy grain/config.json")
+
+    #if len(sys.argv) < 2:
+    #    print("Usage: python main.py <config_file_path>")
+    #    configFilepath = sys.argv[1]
+
+    #if not os.path.isfile(configFilepath):
+    #    raise Exception(f'Config File: {configFilepath}, not found, attempting to use config found in same folder as script')
+
     main(configPath)
