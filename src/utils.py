@@ -10,14 +10,14 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 
 def plot_clusters(df):
-    
     fig, ax = plt.subplots(figsize=(10, 6))
-    scatter = ax.scatter(df['observedTime_ms'], df['energy'], c=df['cluster'], cmap='rainbow', s=10)
+    scatter = ax.scatter(df['observedPhaseDegrees'], df['energy'], c=df['cluster'], cmap='rainbow', s=10)
     legend1 = ax.legend(*scatter.legend_elements(), title="Clusters")
     ax.add_artist(legend1)
     ax.set_title('Clustering Results')
-    ax.set_xlabel('Observed Time (ms)')
+    ax.set_xlabel('Observed Phase Degrees (°)')
     ax.set_ylabel('Energy')
+    plt.style.use('ggplot')
     plt.show()
 
 
