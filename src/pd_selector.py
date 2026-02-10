@@ -190,7 +190,7 @@ def map_labels_to_events(clustered_df, classification_df):
 
     return labeled_data
 
-def subtype_classification(cluster_stats):
+def subtype_classification(data_normalised, cluster_stats):
     """
     Optional: Further classify PD events into subtypes based on feature patterns.
     should be a physics informed appraoched rather than using pure ml 
@@ -219,12 +219,16 @@ def subtype_classification(cluster_stats):
     # can pull those stats straight from the cluster_stats dataframe produced in the previous step. 
     # then define thresholds for each subtype classification based on these features.
     
+    # for each cluster calc descriptive stats for each original feature (peak value, phase consistency, etc. )
+    # use these average features to define rules for each subtype classification. 
+    stats_normalised = data_normalised.groupby('cluster').describe().reset_index()
     
-
     # set thresholds for each subtype 
 
     internal = { # internal delamination 
-       
+       'kurtosis_mean': 5.0,
+
+
        
     }
     

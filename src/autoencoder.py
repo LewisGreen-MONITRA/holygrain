@@ -1,7 +1,10 @@
-# ──────────────────────────────────────────────────────────────────────────────
-#  physics_informed_autoencoder.py
-# ──────────────────────────────────────────────────────────────────────────────
+"""
+Physics-Informed Autoencoder for PD Signal Reconstruction
 
+Author: Lewis Green
+Date: 2024-06-15
+MONITRA 
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -63,8 +66,8 @@ class PhysicsInformedAutoencoder(nn.Module):
             nn.ReLU(inplace=True),
 
             # Global average pool over the *signal* dimension
-            nn.AdaptiveAvgPool1d(1),          # → (B, 128, 1)
-            nn.Flatten(start_dim=1),          # → (B, 128)
+            nn.AdaptiveAvgPool1d(1),         
+            nn.Flatten(start_dim=1),         
 
             nn.Linear(128, latent_dim),
             nn.ReLU(inplace=True),
@@ -77,7 +80,7 @@ class PhysicsInformedAutoencoder(nn.Module):
             nn.Linear(latent_dim, 128 * signal_length),  # Expand to (B, 128*L)
             nn.ReLU(inplace=True),
 
-            nn.Unflatten(1, (128, signal_length)),  # → (B, 128, L)
+            nn.Unflatten(1, (128, signal_length)), 
 
             nn.Conv1d(128, 64, kernel_size=3, padding=1),
             nn.BatchNorm1d(64),
@@ -213,9 +216,6 @@ class PhysicsInformedAutoencoder(nn.Module):
             "total": total_loss,
         }
 
-# ----------------------------------------------------------------------
-# Simple training loop skeleton (illustrative – not meant for production)
-# ----------------------------------------------------------------------
 def train_pi_ae(
     model: PhysicsInformedAutoencoder,
     dataloader,

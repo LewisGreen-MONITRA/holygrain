@@ -8,7 +8,7 @@ in the PD selection stage for multi-measure voting.
 Five Key Measures:
 1. Kurtosis: Measures signal impulsivity (peakedness)
 2. Phase Consistency: Measures temporal coherence/repeatability
-3. Energy Concentration: Measures frequency-domain localization
+3. Energy Concentration: Measures frequency-domain localisation
 4. Signal-to-Noise Ratio (SNR): Measures signal quality
 5. Repetition Rate Regularity: Measures pattern regularity
 
@@ -31,7 +31,7 @@ from sklearn.preprocessing import StandardScaler
 
 def compute_kurtosis(data):
     """
-    Compute kurtosis (4th moment) of PD signals.
+    Compute kurtosis of PD signals.
     
     Physics Principle:
     - Kurtosis measures the "tailedness" or peakedness of a distribution
@@ -83,8 +83,8 @@ def compute_phase_consistency(data, reference_phase=None):
     Compute phase consistency of signals to measure temporal coherence.
     
     Physics Principle:
-    - PD events have repeatable temporal patterns → High phase consistency
-    - Noise has random, uncorrelated patterns → Low phase consistency
+    - PD events have repeatable temporal patterns  High phase consistency
+    - Noise has random, uncorrelated patterns  Low phase consistency
     - Phase consistency measures how consistently signals repeat
     
     Implementation Approach:
@@ -230,7 +230,7 @@ def compute_snr(data, method='peak_to_rms'):
     Physics Principle:
     - SNR = Signal Power / Noise Power
     - PD signals have high SNR (clear signal above noise floor)
-    - Pure noise has SNR ≈ 0
+    - Pure noise has SNR ~ 0
     - Typical PD SNR: 5-100 dB
     
     Implementation Approaches:

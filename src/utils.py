@@ -10,9 +10,15 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 
 def plot_clusters(df):
+     # Filter to only PD events
+    labels = {
+        0: 'Noise',
+        1: 'PD'
+    }
+    df = df[df['is_pd'] != 0]  # Exclude noise points if present
     fig, ax = plt.subplots(figsize=(10, 6))
-    scatter = ax.scatter(df['observedPhaseDegrees'], df['energy'], c=df['cluster'], cmap='rainbow', s=10)
-    legend1 = ax.legend(*scatter.legend_elements(), title="Clusters")
+    scatter = ax.scatter(df['observedPhaseDegrees'], df['energy'], c=df['is_pd'], cmap='rainbow', s=10)
+    legend1 = ax.legend(*scatter.legend_elements(), title="Classification")
     ax.add_artist(legend1)
     ax.set_title('Clustering Results')
     ax.set_xlabel('Observed Phase Degrees (°)')
