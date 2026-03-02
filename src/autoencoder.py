@@ -2,7 +2,7 @@
 Physics-Informed Autoencoder for PD Signal Reconstruction
 
 Author: Lewis Green
-Date: 2024-06-15
+Date: 2026-01-05
 MONITRA 
 """
 import torch

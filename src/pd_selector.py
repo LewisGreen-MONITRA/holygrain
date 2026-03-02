@@ -37,7 +37,12 @@ def aggregate_cluster_features(clustered_df, features):
         'phase_consistency': ['mean', 'std', 'median'],
         'energy_concentration': ['mean', 'std', 'median'],
         'snr': ['mean', 'std', 'median'],
-        'repetition_regularity': ['mean', 'std', 'median']
+        'repetition_regularity': ['mean', 'std', 'median'],
+        'crest_factor': ['mean', 'std', 'median'],
+        'form_factor': ['mean', 'std', 'median'],
+        'spectral_flatness': ['mean', 'std', 'median'],
+        'spectral_centroid': ['mean', 'std', 'median'],
+        'spectral_bandwidth': ['mean', 'std', 'median']
     })
    
    # Flatten column names
@@ -139,7 +144,7 @@ def classify_clusters(scores_df, score_threshold=0.35, min_votes=2):
     classification = []
 
     for cluster_id, row in scores_df.iterrows():
-        # Classify as PD if BOTH conditions met:
+        # Classify as PD if all conditions met:
         # 1. Weighted score >= threshold
         # 2. At least min_votes features passed their thresholds
         is_pd = 1 if (row['weighted_score'] >= score_threshold and row['votes_passed'] >= min_votes) else 0
@@ -182,7 +187,6 @@ def map_labels_to_events(clustered_df, classification_df):
     
     labeled_data['is_pd'].fillna(0, inplace=True)  # Treat unmapped clusters as non-PD
     labeled_data['is_pd'] = labeled_data['is_pd'].astype(int)
-
     n_pd_events = (labeled_data['is_pd'] == 1).sum()
     n_noise_events = (labeled_data['is_pd'] == 0).sum()
 

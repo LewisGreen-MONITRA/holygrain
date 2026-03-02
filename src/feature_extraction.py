@@ -220,6 +220,91 @@ def compute_energy_concentration(data, freq_band=None):
 
 
 # ============================================================================
+# FEATURE 3B: SPECTRAL FLATNESS - Tonality vs Noise
+# ============================================================================
+
+def compute_spectral_flatness(data, eps=1e-12):
+    """
+    Compute spectral flatness (geometric mean / arithmetic mean of power).
+
+    Physics Principle:
+    - PD signals are peaky/band-limited -> low flatness
+    - Noise is broadband -> high flatness
+
+    Args:
+        data: Input data (N, features) or (N,)
+        eps: Small constant to avoid log/zero issues
+
+    Returns:
+        flatness: Spectral flatness for each sample (0-1)
+    """
+
+    if isinstance(data, pd.DataFrame):
+        numeric_data = data.select_dtypes(include=[np.number])
+        data = numeric_data.values
+
+    if len(data.shape) == 1:
+        fft = np.fft.fft(data)
+        power = np.abs(fft[:len(data) // 2]) ** 2
+        power = np.maximum(power, eps)
+        geo_mean = np.exp(np.mean(np.log(power)))
+        arith_mean = np.mean(power)
+        return geo_mean / (arith_mean + eps)
+
+    fft = np.fft.fft(data, axis=1)
+    half_len = data.shape[1] // 2
+    power = np.abs(fft[:, :half_len]) ** 2
+    power = np.maximum(power, eps)
+    geo_mean = np.exp(np.mean(np.log(power), axis=1))
+    arith_mean = np.mean(power, axis=1)
+    return geo_mean / (arith_mean + eps)
+
+
+# ============================================================================
+# FEATURE 3C: SPECTRAL CENTROID + BANDWIDTH - Frequency Spread
+# ============================================================================
+
+def compute_spectral_centroid_bandwidth(data, eps=1e-12):
+    """
+    Compute spectral centroid and bandwidth.
+
+    Physics Principle:
+    - PD signals concentrate energy in a narrower band (lower bandwidth)
+    - Centroid captures dominant frequency location
+
+    Args:
+        data: Input data (N, features) or (N,)
+        eps: Small constant to avoid division by zero
+
+    Returns:
+        centroid: Spectral centroid for each sample
+        bandwidth: Spectral bandwidth for each sample
+    """
+
+    if isinstance(data, pd.DataFrame):
+        numeric_data = data.select_dtypes(include=[np.number])
+        data = numeric_data.values
+
+    if len(data.shape) == 1:
+        fft = np.fft.fft(data)
+        power = np.abs(fft[:len(data) // 2]) ** 2
+        freqs = np.arange(len(power))
+        total = np.sum(power) + eps
+        centroid = np.sum(freqs * power) / total
+        bandwidth = np.sqrt(np.sum(((freqs - centroid) ** 2) * power) / total)
+        return centroid, bandwidth
+
+    fft = np.fft.fft(data, axis=1)
+    half_len = data.shape[1] // 2
+    power = np.abs(fft[:, :half_len]) ** 2
+    freqs = np.arange(half_len)
+    total = np.sum(power, axis=1) + eps
+    centroid = np.sum(power * freqs, axis=1) / total
+    bandwidth = np.sqrt(np.sum(((freqs - centroid[:, None]) ** 2) * power, axis=1) / total)
+    return centroid, bandwidth
+
+
+# ============================================================================
 # FEATURE 4: SIGNAL-TO-NOISE RATIO (SNR)
 # ============================================================================
 
@@ -453,6 +538,101 @@ def compute_repetition_regularity(data, clustering_labels=None):
         
         return regularity
 
+# ============================================================================
+# FEATURE 6  COMPUTE CREST FACTOR - Peak Sharpness
+# ============================================================================
+
+def compute_crest_factor(data, verbose = True, percentile = 99.5):
+    """
+    Compute crest factor of PD signals.
+    
+    Physics Principle:
+    - Crest factor = Peak amplitude / RMS
+    - PD signals have high crest factor (sharp peaks)
+    - Noise has low crest factor (more uniform)
+    
+    Args:
+        data: Input data (N, features) or (N,)
+        verbose: Whether to print threshold information
+        percentile: Percentile for thresholding (default 99.5)
+        
+    Returns:
+        crest_factor: Crest factor for each sample
+    """ 
+
+    if isinstance(data, pd.DataFrame):
+        # Select only numeric columns to avoid string columns
+        numeric_data = data.select_dtypes(include=[np.number])
+        data = numeric_data.values
+    if len(data.shape) == 1:
+        # Single sample 
+        peak = np.max(np.abs(data))
+        rms = np.sqrt(np.mean(data ** 2))
+        crest = peak / (rms + 1e-10)
+        return crest
+    else:
+        # Multiple samples - vectorized computation
+        peak = np.max(np.abs(data), axis=1)
+        rms = np.sqrt(np.mean(data ** 2, axis=1))
+        crest = peak / (rms + 1e-10)
+        
+        if verbose:
+            threshold = np.percentile(crest, percentile)
+        
+        return crest
+
+# ============================================================================
+# FEATURE 7 COMPUTE FORM FACTOR 
+# ============================================================================
+def compute_form_factor(data, verbose = True, percentile = 99.5):
+   """
+   Compute form factor of PD signals.
+   
+   Physics Principle:
+   - Form factor = RMS / Mean absolute value
+   - PD signals have high form factor (sharp peaks)
+   - Noise has low form factor (more uniform)
+
+   
+   Args:
+       data: Input data (N, features) or (N,)
+       verbose: Whether to print threshold information
+       percentile: Percentile for thresholding (default 99.5)
+       
+   Returns:
+       form_factor: Form factor for each sample
+   """ 
+
+   if isinstance(data, pd.DataFrame):
+       # Select only numeric columns to avoid string columns
+       numeric_data = data.select_dtypes(include=[np.number])
+       data = numeric_data.values
+   if len(data.shape) == 1:
+       # Single sample 
+       rms = np.sqrt(np.mean(data ** 2))
+       mean_abs = np.mean(np.abs(data))
+       form = rms / (mean_abs + 1e-10)
+       return form
+   else:
+       # Multiple samples - vectorized computation
+       rms = np.sqrt(np.mean(data ** 2, axis=1))
+       mean_abs = np.mean(np.abs(data), axis=1)
+       form = rms / (mean_abs + 1e-10)
+       
+       if verbose:
+           threshold = np.percentile(form, percentile)
+          
+       
+       return form
+
+# ===========================================================================
+# FEATURE 8 PHASE ENTROPY 
+# ===========================================================================
+
+def compute_phase_entropy(data):
+    
+    return 0.0  # Placeholder for phase entropy computation
+
 
 # ============================================================================
 # MAIN FEATURE EXTRACTION FUNCTION
@@ -490,26 +670,31 @@ def extract_pd_features(data, clustering_labels=None, raw_signals=None):
         'phase_consistency': np.empty(n_samples, dtype=np.float32),
         'energy_concentration': np.empty(n_samples, dtype=np.float32),
         'snr': np.empty(n_samples, dtype=np.float32),
-        'repetition_regularity': np.empty(n_samples, dtype=np.float32)
+        'repetition_regularity': np.empty(n_samples, dtype=np.float32),
+        'crest_factor': np.empty(n_samples, dtype=np.float32),
+        'form_factor': np.empty(n_samples, dtype=np.float32),
+        'spectral_flatness': np.empty(n_samples, dtype=np.float32),
+        'spectral_centroid': np.empty(n_samples, dtype=np.float32),
+        'spectral_bandwidth': np.empty(n_samples, dtype=np.float32)
     }
     
     # ========================================================================
     # Extract each feature (results written directly to pre-allocated arrays)
     # ========================================================================
     
-    print("[1/5] Computing kurtosis...")
+    print("[1/9] Computing kurtosis...")
     features['kurtosis'][:] = compute_kurtosis(data)
     
-    print("[2/5] Computing phase consistency...")
+    print("[2/9] Computing phase consistency...")
     features['phase_consistency'][:] = compute_phase_consistency(data)
     
-    print("[3/5] Computing energy concentration...")
+    print("[3/9] Computing energy concentration...")
     features['energy_concentration'][:] = compute_energy_concentration(data)
     
-    print("[4/5] Computing SNR...")
+    print("[4/9] Computing SNR...")
     features['snr'][:] = compute_snr(data, method='peak_to_rms')
     
-    print("[5/5] Computing repetition regularity...")
+    print("[5/9] Computing repetition regularity...")
     # This one needs clustering info or time info
     if clustering_labels is not None:
         rep_reg = compute_repetition_regularity(data, clustering_labels)
@@ -519,6 +704,21 @@ def extract_pd_features(data, clustering_labels=None, raw_signals=None):
         ], dtype=np.float32)
     else:
         features['repetition_regularity'][:] = compute_repetition_regularity(data)
+
+    print("[6/9] Computing crest factor...")
+    features['crest_factor'][:] = compute_crest_factor(data)
+
+    print("[7/9] Computing form factor...")
+    features['form_factor'][:] = compute_form_factor(data)
+
+    print("[8/9] Computing spectral flatness...")
+    features['spectral_flatness'][:] = compute_spectral_flatness(data)
+
+    print("[9/9] Computing spectral centroid + bandwidth...")
+    centroid, bandwidth = compute_spectral_centroid_bandwidth(data)
+    features['spectral_centroid'][:] = centroid
+    features['spectral_bandwidth'][:] = bandwidth
+
     
     # ========================================================================
     # Combine into DataFrame (zero-copy from pre-allocated arrays)
@@ -588,7 +788,12 @@ def get_feature_thresholds(sensor):
             'phase_consistency': 0.5,  # Lowered from 0.7
             'energy_concentration': 0.4,  # Lowered from 0.6
             'snr': 3.0,                # Lowered from 5.0
-            'repetition_regularity': 0.6  # Lowered from 0.8
+            'repetition_regularity': 0.6,  # Lowered from 0.8
+            'crest_factor': 5.0,         # New threshold for crest factor
+            'form_factor': 1.5,          # New threshold for form factor
+            'spectral_flatness': 0.3,    # New threshold for spectral flatness
+            'spectral_centroid': 0.5,    # New threshold for spectral centroid
+            'spectral_bandwidth': 0.4    # New threshold for spectral bandwidth
         }
     elif sensor == 'UHF':
         print(f'Using UHF-specific feature thresholds.')
@@ -606,7 +811,7 @@ def get_feature_thresholds(sensor):
             'phase_consistency': 0.55,          # Consistency > 0.55 suggests coherent
             'energy_concentration': 0.45,       # Energy > 45% in band suggests localized
             'snr': 5.0,                         # SNR > 5 dB suggests good signal quality
-            'repetition_regularity': 0.7        # Regularity > 0.7 suggests periodic
+            'repetition_regularity': 0.7,       # Regularity > 0.7 suggests periodic
         }
     # TODO add thresholds for HVCC 
     else:
@@ -637,6 +842,11 @@ def get_adaptive_thresholds(cluster_stats, percentile=50):
         'phase_consistency': cluster_stats['phase_consistency_mean'].quantile(percentile/100),
         'energy_concentration': cluster_stats['energy_concentration_mean'].quantile(percentile/100),
         'snr': cluster_stats['snr_mean'].quantile(percentile/100),
-        'repetition_regularity': cluster_stats['repetition_regularity_mean'].quantile(percentile/100)
+        'repetition_regularity': cluster_stats['repetition_regularity_mean'].quantile(percentile/100),
+        'crest_factor': cluster_stats['crest_factor_mean'].quantile(percentile/100),
+        'form_factor': cluster_stats['form_factor_mean'].quantile(percentile/100),
+        'spectral_flatness': cluster_stats['spectral_flatness_mean'].quantile(percentile/100),
+        'spectral_centroid': cluster_stats['spectral_centroid_mean'].quantile(percentile/100),
+        'spectral_bandwidth': cluster_stats['spectral_bandwidth_mean'].quantile(percentile/100)
     }
     return thresholds
