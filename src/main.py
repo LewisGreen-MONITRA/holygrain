@@ -2,7 +2,7 @@
 Phyiscs inofrmed unsupervised approach for automated de-noiseing of Partial Discharge signals.
 
 Author: Lewis Green
-Date: 2024-06-15
+Date: 2026-01-05
 MOINTRA 
 """
 
@@ -80,7 +80,7 @@ def main(configPath: pathlib.Path):
     # Reset index for consistent alignment throughout pipeline
     #data_normalised = data_normalised.reset_index(drop=True)
     #data_normalised = sampleDataset(data_normalised, seed)
-    data_normalised = data_normalised.sample(516280, random_state=seed).reset_index(drop=True)  # testing 
+    data_normalised = data_normalised.sample(529589, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -101,7 +101,7 @@ def main(configPath: pathlib.Path):
     
     signal_length = len(ae_features)
     print(f"  Using {signal_length} features for autoencoder")
-    
+
     data_tensor = torch.tensor(data_numeric.values, dtype=torch.float32)
     if len(data_tensor.shape) == 2:
         data_tensor = data_tensor.unsqueeze(1)
@@ -131,10 +131,11 @@ def main(configPath: pathlib.Path):
         ) 
     
     autoencoder = PhysicsInformedAutoencoder(signal_length=signal_length).to(device)    
+    # autoencoder = torch.compile(autoencoder, mode='reduce-overhead') 
     optimiser = torch.optim.AdamW(autoencoder.parameters(), lr=1e-3, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimiser, max_lr=1e-3, steps_per_epoch=len(loader), epochs=20)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimiser, max_lr=1e-3, steps_per_epoch=len(loader), epochs=50)
  
-    train_pi_ae(autoencoder, loader, optimiser, scheduler, device=device, epochs=20)
+    train_pi_ae(autoencoder, loader, optimiser, scheduler, device=device, epochs=50)
     
     # Obtain latent space representation
     autoencoder.eval()
@@ -155,10 +156,10 @@ def main(configPath: pathlib.Path):
     # Add original IDs for later mapping
     latent_df['id'] = data_normalised.index.values
     
-   # isolated_df = isolationForest(latent_df)
+    isolated_df = isolationForest(latent_df)
 
     clustered_df = hdbscan(
-        latent_df.drop(columns=['id']), 
+        isolated_df.drop(columns=['id']), 
         n_components=n_components, 
         min_cluster_size=min_cluster, 
         min_samples=min_samples, 
@@ -166,7 +167,7 @@ def main(configPath: pathlib.Path):
     )
     
     # Restore ID column
-    clustered_df['id'] = latent_df['id'].values
+    clustered_df['id'] = isolated_df['id'].values
  
     # =======================================================
     # PD classification 
@@ -174,26 +175,32 @@ def main(configPath: pathlib.Path):
   
     # Filter features to match clustered samples (after isolation forest)
     # Use the indices that survived isolation forest filtering
-    filtered_indices = latent_df.index.tolist()
-    filtered_features = normalised_features.iloc[filtered_indices].reset_index(drop=True)
+    filtered_indices = isolated_df.index
+    filtered_features = normalised_features.loc[filtered_indices].reset_index(drop=True)
     clustered_df_reset = clustered_df.reset_index(drop=True)
+
+    if len(clustered_df_reset) != len(filtered_features):
+        raise ValueError(
+            f"Alignment error: clustered rows ({len(clustered_df_reset)}) "
+            f"!= feature rows ({len(filtered_features)})."
+        )
     
     # Aggregate features at cluster level
     cluster_stats = aggregate_cluster_features(clustered_df_reset, filtered_features)
     print(cluster_stats.head())
    # adaptive thresholding seems to have corrected the issue of no PD being detected
     thresholds = get_adaptive_thresholds(cluster_stats, percentile=50)
+    #thresholds = get_feature_thresholds(sensor)
     weights = assignWeights(thresholds)
 
     # Compute scores for each cluster
     scores_df = computeScores(cluster_stats, thresholds, weights)
     
     # Classify clusters
-    classification_df = classify_clusters(scores_df, score_threshold=0.3, min_votes=3)
+    classification_df = classify_clusters(scores_df, score_threshold=0.2, min_votes=3)
     
     # Map classification back to events
     labeled_df = map_labels_to_events(clustered_df_reset, classification_df)
-    
     # Restore original ID
     labeled_df['id'] = clustered_df['id'].values
 
@@ -221,9 +228,13 @@ def main(configPath: pathlib.Path):
         if idx in data_normalised.index:
             data_normalised.loc[idx, 'cluster'] = result_mapping.loc[idx, 'cluster']
             data_normalised.loc[idx, 'is_pd'] = result_mapping.loc[idx, 'is_pd']
-    
-    print(f'  Outliers (cluster=-1): {(data_normalised["cluster"] == -1).sum()}')
     data_normalised = inverseTransform(data_normalised, transformers)
+    # classify events where peakValue is below a certain threshold as noise
+    data_normalised['is_pd'] = np.where(data_normalised['peakValue'] < 15.0, 0, data_normalised['is_pd'])
+
+    print(f'  Outliers (cluster=-1): {(data_normalised["cluster"] == -1).sum()}')
+   
+
     # =======================================================
     # Write Results to db 
     print(f'\n[6/6] Writing results to database...')
