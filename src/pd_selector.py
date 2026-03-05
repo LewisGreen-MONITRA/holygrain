@@ -42,7 +42,8 @@ def aggregate_cluster_features(clustered_df, features):
         'form_factor': ['mean', 'std', 'median'],
         'spectral_flatness': ['mean', 'std', 'median'],
         'spectral_centroid': ['mean', 'std', 'median'],
-        'spectral_bandwidth': ['mean', 'std', 'median']
+        'spectral_bandwidth': ['mean', 'std', 'median'],
+        'phase_weighting': ['mean', 'std', 'median']
     })
    
    # Flatten column names
@@ -128,7 +129,7 @@ def computeScores(cluster_stats, feature_thresholds, weights=None):
    
    print(f'Computed scores for {len(scores_df)} clusters')
    print(f'  Avg weighted score: {scores_df["weighted_score"].mean():.3f}')
-   print(f'  Avg votes passed: {scores_df["votes_passed"].mean():.1f}/5')
+   print(f'  Avg votes passed: {scores_df["votes_passed"].mean():.1f}/{len(feature_thresholds)}')
 
    return scores_df
 
@@ -185,7 +186,7 @@ def map_labels_to_events(clustered_df, classification_df):
     labeled_data = clustered_df.copy()
     labeled_data['is_pd'] = labeled_data['cluster'].map(label_mapping)
     
-    labeled_data['is_pd'].fillna(0, inplace=True)  # Treat unmapped clusters as non-PD
+    labeled_data.fillna({'is_pd': 0}, inplace=True)  # Treat unmapped clusters as non-PD
     labeled_data['is_pd'] = labeled_data['is_pd'].astype(int)
     n_pd_events = (labeled_data['is_pd'] == 1).sum()
     n_noise_events = (labeled_data['is_pd'] == 0).sum()

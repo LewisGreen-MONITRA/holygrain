@@ -626,13 +626,45 @@ def compute_form_factor(data, verbose = True, percentile = 99.5):
        return form
 
 # ===========================================================================
-# FEATURE 8 PHASE ENTROPY 
+# FEATURE 8 PHASE WEIGHTING - phase location of event
 # ===========================================================================
+def compute_phase_weighting(data, verbose = True):
+    """
+    Compute phase weighting of PD signals.
 
-def compute_phase_entropy(data):
+    Physics Principle:
+    - PD events often occur at specific phase angles of the AC cycle
+    - Noise is random across phases
+    - Typically occuring at 90 and 270 degrees, first and third quarter of cycle
+    - Take observed phase degrees from database and weight accordingly
     
-    return 0.0  # Placeholder for phase entropy computation
 
+    Args:
+        data: Input data (N, features) or (N,)
+        verbose: Whether to print threshold information
+
+    """
+    if isinstance(data, pd.DataFrame):
+        # Select only numeric columns to avoid string columns
+        numeric_data = data.select_dtypes(include=[np.number])
+        data = numeric_data.values
+    if len(data.shape) == 1:
+        # Single sample 
+        phase = data[8]  # Assuming phase is at index 8
+        # Weighting based on proximity to 90 and 270 degrees
+        weight = max(0, np.cos(np.radians(phase - 90))) + max(0, np.cos(np.radians(phase - 270)))
+        return weight
+    else:
+        # Multiple samples - vectorized computation
+        # observed phase degree is at the last index 
+        phases = data.shape[1] - 1 
+        weight = np.maximum(0, np.cos(np.radians(phases - 90))) + np.maximum(0, np.cos(np.radians(phases - 270)))
+        
+        if verbose:
+            threshold = np.percentile(weight, 99.5)
+        
+        return weight
+    
 
 # ============================================================================
 # MAIN FEATURE EXTRACTION FUNCTION
@@ -675,26 +707,27 @@ def extract_pd_features(data, clustering_labels=None, raw_signals=None):
         'form_factor': np.empty(n_samples, dtype=np.float32),
         'spectral_flatness': np.empty(n_samples, dtype=np.float32),
         'spectral_centroid': np.empty(n_samples, dtype=np.float32),
-        'spectral_bandwidth': np.empty(n_samples, dtype=np.float32)
+        'spectral_bandwidth': np.empty(n_samples, dtype=np.float32),
+        'phase_weighting': np.empty(n_samples, dtype=np.float32)
     }
     
     # ========================================================================
     # Extract each feature (results written directly to pre-allocated arrays)
     # ========================================================================
     
-    print("[1/9] Computing kurtosis...")
+    print("[1/10] Computing kurtosis...")
     features['kurtosis'][:] = compute_kurtosis(data)
     
-    print("[2/9] Computing phase consistency...")
+    print("[2/10] Computing phase consistency...")
     features['phase_consistency'][:] = compute_phase_consistency(data)
     
-    print("[3/9] Computing energy concentration...")
+    print("[3/10] Computing energy concentration...")
     features['energy_concentration'][:] = compute_energy_concentration(data)
     
-    print("[4/9] Computing SNR...")
+    print("[4/10] Computing SNR...")
     features['snr'][:] = compute_snr(data, method='peak_to_rms')
     
-    print("[5/9] Computing repetition regularity...")
+    print("[5/10] Computing repetition regularity...")
     # This one needs clustering info or time info
     if clustering_labels is not None:
         rep_reg = compute_repetition_regularity(data, clustering_labels)
@@ -705,21 +738,23 @@ def extract_pd_features(data, clustering_labels=None, raw_signals=None):
     else:
         features['repetition_regularity'][:] = compute_repetition_regularity(data)
 
-    print("[6/9] Computing crest factor...")
+    print("[6/10] Computing crest factor...")
     features['crest_factor'][:] = compute_crest_factor(data)
 
-    print("[7/9] Computing form factor...")
+    print("[7/10] Computing form factor...")
     features['form_factor'][:] = compute_form_factor(data)
 
-    print("[8/9] Computing spectral flatness...")
+    print("[8/10] Computing spectral flatness...")
     features['spectral_flatness'][:] = compute_spectral_flatness(data)
 
-    print("[9/9] Computing spectral centroid + bandwidth...")
+    print("[9/10] Computing spectral centroid + bandwidth...")
     centroid, bandwidth = compute_spectral_centroid_bandwidth(data)
     features['spectral_centroid'][:] = centroid
     features['spectral_bandwidth'][:] = bandwidth
 
-    
+    print("[10/10] Computing phase weighting...")
+    features['phase_weighting'][:] = compute_phase_weighting(data)
+
     # ========================================================================
     # Combine into DataFrame (zero-copy from pre-allocated arrays)
     # ========================================================================
@@ -847,6 +882,7 @@ def get_adaptive_thresholds(cluster_stats, percentile=50):
         'form_factor': cluster_stats['form_factor_mean'].quantile(percentile/100),
         'spectral_flatness': cluster_stats['spectral_flatness_mean'].quantile(percentile/100),
         'spectral_centroid': cluster_stats['spectral_centroid_mean'].quantile(percentile/100),
-        'spectral_bandwidth': cluster_stats['spectral_bandwidth_mean'].quantile(percentile/100)
+        'spectral_bandwidth': cluster_stats['spectral_bandwidth_mean'].quantile(percentile/100),
+        'phase_weighting': cluster_stats['phase_weighting_mean'].quantile(percentile/100)
     }
     return thresholds

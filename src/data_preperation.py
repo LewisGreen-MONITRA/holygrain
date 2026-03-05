@@ -75,8 +75,9 @@ def normaliseDataset(args, seed=42):
         events_df = getDataset(args)
         #features = ['id', 'acquisition_id'] # save for later
         #events_df.drop(features)
+        # need to exclude observedPhaseDegrees for later in the pipeline, easier to do it here than inverse the transform later on, also has a lot of outliers that skew the distribution and makes it harder to cluster effectively
         features = ['id', 'energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
-                    'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
+                    'observedPeakWidth_10pc_ns', 
                     'observedRiseTime_ns',  'observedTime_ms', 'peakValue', 'acquisition_id']
 
         transformers = {}
@@ -99,9 +100,11 @@ def normaliseDataset(args, seed=42):
         if len(reduced_df.columns) == 11:
             # Columns already match feature count, ensure correct order
             reduced_df.columns = ['id', 'energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
-                                 'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
+                                 'observedPeakWidth_10pc_ns', 
                                  'observedRiseTime_ns',  'observedTime_ms', 'peakValue', 'acquisition_id']
         # If column count differs, keep original column names
+        reduced_df['observedPhaseDegrees'] = events_df['observedPhaseDegrees']  # Add back the excluded column without transformation
+
         return reduced_df, transformers
 
     except FileNotFoundError:
@@ -130,6 +133,12 @@ def getSensor(args):
     return sensor
 
 def getEventCount(cfg):
+    """
+    Get event count for each acquisition in the specified time range.
+    Returns a DataFrame with acquisition_id and eventCount.
+
+    """
+
     query = """
     SELECT eventCount 
     FROM Acquisition AS a
@@ -140,10 +149,17 @@ def getEventCount(cfg):
 def inverseTransform(reduced_df, transformers):
     """
     Recover original data structure
-
+    Args:
+        reduced_df: DataFrame with normalized features
+        transformers: Dictionary of fitted QuantileTransformers for each feature
+    
+    Returns:
+        DataFrame with original feature distributions (except for observedPhaseDegrees which is added back without transformation
     """
+    
     df = reduced_df.copy()
-    cols = [col for col in df.columns if col in transformers]
+    # observedPhaseDegrees shouldn't be in the transformer dict 
+    cols = [col for col in df.columns if col in transformers] 
 
     for col in cols:
         transformer = transformers[col]
