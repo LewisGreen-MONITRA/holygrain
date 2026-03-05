@@ -78,9 +78,9 @@ def main(configPath: pathlib.Path):
     # want to capture the variance of the actual data rather than the latent space 
     n_components = getNComponents(data_normalised.drop(columns=['id', 'acquisition_id']))
     # Reset index for consistent alignment throughout pipeline
-    #data_normalised = data_normalised.reset_index(drop=True)
+    data_normalised = data_normalised.reset_index(drop=True)
     #data_normalised = sampleDataset(data_normalised, seed)
-    data_normalised = data_normalised.sample(529589, random_state=seed).reset_index(drop=True)  # testing 
+    #data_normalised = data_normalised.sample(551230, random_state=seed).reset_index(drop=True)  # testing 
     sensor = getSensor(cfg)
     acqui_df = getEventCount(cfg)  
     # =======================================================
@@ -197,22 +197,13 @@ def main(configPath: pathlib.Path):
     scores_df = computeScores(cluster_stats, thresholds, weights)
     
     # Classify clusters
-    classification_df = classify_clusters(scores_df, score_threshold=0.2, min_votes=3)
+    classification_df = classify_clusters(scores_df, score_threshold=0.2, min_votes=4)
     
     # Map classification back to events
     labeled_df = map_labels_to_events(clustered_df_reset, classification_df)
     # Restore original ID
     labeled_df['id'] = clustered_df['id'].values
 
-    # =======================================================
-    # Summary statistics
-    print(f'\n[5/6] Pipeline Summary:')
-    print(f'  Total events processed: {len(data_normalised)}')
-    print(f'  Events after outlier removal: {len(clustered_df)}')
-    print(f'  Clusters found: {clustered_df["cluster"].nunique()}')
-    print(f'  PD events: {(labeled_df["is_pd"] == 1).sum()}')
-    print(f'  Noise events: {(labeled_df["is_pd"] == 0).sum()}')
-    
     # =======================================================
     # Map results back to original dataframe
     # Create mapping from original index to cluster/is_pd labels
@@ -229,9 +220,19 @@ def main(configPath: pathlib.Path):
             data_normalised.loc[idx, 'cluster'] = result_mapping.loc[idx, 'cluster']
             data_normalised.loc[idx, 'is_pd'] = result_mapping.loc[idx, 'is_pd']
     data_normalised = inverseTransform(data_normalised, transformers)
-    # classify events where peakValue is below a certain threshold as noise
-    data_normalised['is_pd'] = np.where(data_normalised['peakValue'] < 15.0, 0, data_normalised['is_pd'])
+    # classify events where energy is below a certain threshold as noise
+    # usually events in this range are noise, messy implementation but should work for now, will refine in the future
+    # maybe use an adaptive threshold? points "close" to 0 are probably noise but how to define what is close? 
+    data_normalised['is_pd'] = np.where((data_normalised['energy'] < 25000.0) & (data_normalised['energy'] > -25000.0), 0, data_normalised['is_pd'])
 
+    # =======================================================
+    # Summary statistics
+    print(f'\n[5/6] Pipeline Summary:')
+    print(f'  Total events processed: {len(data_normalised)}')
+    print(f'  Events after outlier removal: {len(clustered_df)}')
+    print(f'  Clusters found: {clustered_df["cluster"].nunique()}')
+    print(f'  PD events: {(labeled_df["is_pd"] == 1).sum()}')
+    print(f'  Noise events: {(labeled_df["is_pd"] == 0).sum()}')
     print(f'  Outliers (cluster=-1): {(data_normalised["cluster"] == -1).sum()}')
    
 
