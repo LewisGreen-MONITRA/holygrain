@@ -628,42 +628,37 @@ def compute_form_factor(data, verbose = True, percentile = 99.5):
 # ===========================================================================
 # FEATURE 8 PHASE WEIGHTING - phase location of event
 # ===========================================================================
-def compute_phase_weighting(data, verbose = True):
-    """
-    Compute phase weighting of PD signals.
 
-    Physics Principle:
-    - PD events often occur at specific phase angles of the AC cycle
-    - Noise is random across phases
-    - Typically occuring at 90 and 270 degrees, first and third quarter of cycle
-    - Take observed phase degrees from database and weight accordingly
-    
+def compute_phase_weighting(data, verbose=True): 
+    """
+    Compute phase weighting for PD events based on proximity to 90 and 270 degrees.
+    Closer to these angles => higher weight, as they are more indicative of PD activity. 
+    Vectorised implementation for efficiency.
 
     Args:
-        data: Input data (N, features) or (N,)
-        verbose: Whether to print threshold information
-
+        data: numpy array or DataFrame containing 'observedPhaseDegrees' column or index 8 for phase
+        verbose: If True, prints progress information.
+    Returns:
+        Array of phase weights corresponding to each sample in data.
     """
     if isinstance(data, pd.DataFrame):
-        # Select only numeric columns to avoid string columns
-        numeric_data = data.select_dtypes(include=[np.number])
-        data = numeric_data.values
-    if len(data.shape) == 1:
-        # Single sample 
-        phase = data[8]  # Assuming phase is at index 8
-        # Weighting based on proximity to 90 and 270 degrees
-        weight = max(0, np.cos(np.radians(phase - 90))) + max(0, np.cos(np.radians(phase - 270)))
-        return weight
+        phases = data['observedPhaseDegrees'].values
     else:
-        # Multiple samples - vectorized computation
-        # observed phase degree is at the last index 
-        phases = data.shape[1] - 1 
-        weight = np.maximum(0, np.cos(np.radians(phases - 90))) + np.maximum(0, np.cos(np.radians(phases - 270)))
-        
-        if verbose:
-            threshold = np.percentile(weight, 99.5)
-        
-        return weight
+        # observed phase degree is at the last index after id and acqui id are dropped 
+        phases = data[:, -1]
+    
+    if verbose:
+        print("Computing phase weighting...")
+    # stronger weighting for events near 90 and 270 degrees +- 45 degrees as a range 
+    if isinstance(data, pd.DataFrame):
+        weights = np.where(
+            ((phases >= 45) & (phases <= 135)) | ((phases >= 225) & (phases <= 315)),
+            # normalise the range so that the max weight is 1 at 90 and 270 degrees, and decreases linearly to above 0 at the edges of the range
+            1 - (np.abs(phases - 90) / 45) * (phases <= 135) - (np.abs(phases - 270) / 45) * (phases >= 225),
+            0.5  # baseline weight for events outside the target phase ranges
+        )
+        return weights
+
     
 
 # ============================================================================

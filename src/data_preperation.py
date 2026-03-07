@@ -77,7 +77,7 @@ def normaliseDataset(args, seed=42):
         #events_df.drop(features)
         # need to exclude observedPhaseDegrees for later in the pipeline, easier to do it here than inverse the transform later on, also has a lot of outliers that skew the distribution and makes it harder to cluster effectively
         features = ['id', 'energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
-                    'observedPeakWidth_10pc_ns', 
+                    'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
                     'observedRiseTime_ns',  'observedTime_ms', 'peakValue', 'acquisition_id']
 
         transformers = {}
@@ -100,10 +100,10 @@ def normaliseDataset(args, seed=42):
         if len(reduced_df.columns) == 11:
             # Columns already match feature count, ensure correct order
             reduced_df.columns = ['id', 'energy', 'modifiedFrequency', 'observedArea_mVns', 'observedFallTime_ns',
-                                 'observedPeakWidth_10pc_ns', 
+                                 'observedPeakWidth_10pc_ns', 'observedPhaseDegrees',
                                  'observedRiseTime_ns',  'observedTime_ms', 'peakValue', 'acquisition_id']
         # If column count differs, keep original column names
-        reduced_df['observedPhaseDegrees'] = events_df['observedPhaseDegrees']  # Add back the excluded column without transformation
+        #reduced_df['observedPhaseDegrees'] = events_df['observedPhaseDegrees']  # Add back the excluded column without transformation
 
         return reduced_df, transformers
 
